@@ -1,11 +1,25 @@
 package publisher
 
 import (
+	"strings"
 	"github.com/dgraph-io/badger"
 	"github.com/ipfsync/publisher/resource"
 )
 
-// Datastore is a store for saving a resource collection data. Including collection itself and resource items.
+const dbKeySep string = "::"
+type dbKey []string
+
+func (k dbKey) String() string {
+	escaped := make([]string)
+	for _, keyPart := range k {
+		escaped.append(strings.ReplaceAll(keyPart, "::", "\\:\\:"))
+	}
+	
+	return strings.Join(escaped, "::")
+}
+
+
+// Datastore is a store for saving resource collections data. Including collections and their resource items.
 // For now it is a struct using BadgerDB. Later on it will be refactored as an interface with multiple database implements.
 type Datastore struct {
 	db *badger.DB
@@ -23,6 +37,32 @@ func NewDatastore(dbPath string) (*Datastore, error) {
 	return &Datastore{db: db}, nil
 }
 
-func (d *Datastore) UpdateCollection(c *resource.Collection) error {
-
+// Close Datastore
+func (d *Datastore) Close() error {
+	return d.db.Close()
 }
+
+// UpdateCollection update collection information
+func (d *Datastore) CreateOrUpdateCollection(c *resource.Collection) error {
+	err := d.db.Update(func(txn *badger.Txn) error {
+
+		key := c.IPNSAddress
+
+		err := txn.Set([]byte("Name"), []byte(c.Name))
+		if err != nil {
+			return err
+		}
+		err = txn.Set([]byte("Description"), []byte(c.Description))
+		if err != nil {
+			return err
+		}
+		err = txn.Set([]byte("IPNSAddress"), []byte(c.IPNSAddress))
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return err
+}
+
+func (d *Datastore) ReadCollection
