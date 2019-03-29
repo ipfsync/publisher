@@ -53,20 +53,21 @@ func (d *Datastore) Close() error {
 func (d *Datastore) CreateOrUpdateCollection(c *Collection) error {
 	err := d.db.Update(func(txn *badger.Txn) error {
 
+		// Key IPNSAddress::
 		keyPrefix := IPNSAddress
 
-		err := txn.Set([]byte(dbKey{keyPrefix, "Name"}), []byte(c.Name))
+		err := txn.Set([]byte(dbKey{keyPrefix, "Name"}.String()), []byte(c.Name))
 		if err != nil {
 			return err
 		}
-		err = txn.Set([]byte("Description"), []byte(c.Description))
+		err = txn.Set([]byte(dbKey{keyPrefix, "Description"}.String()), []byte(c.Description))
 		if err != nil {
 			return err
 		}
-		err = txn.Set([]byte("IPNSAddress"), []byte(c.IPNSAddress))
-		if err != nil {
-			return err
-		}
+
+		// Key Collections
+		c, err := txn.Get([]byte("Collections"))
+
 		return nil
 	})
 	return err
