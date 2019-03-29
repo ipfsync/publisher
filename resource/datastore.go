@@ -1,13 +1,20 @@
-package publisher
+package resource
 
 import (
 	"strings"
 	"github.com/dgraph-io/badger"
-	"github.com/ipfsync/publisher/resource"
 )
 
 const dbKeySep string = "::"
 type dbKey []string
+
+func NewDbKeyFromStr(str string) dbKey {
+	parts := strings.Split(str, "::")
+	for i := 0; i < len(parts); i++ {
+		parts[i] = strings.ReplaceAll(parts[i], "\\:\\:", "::")
+	}
+	return parts
+}
 
 func (k dbKey) String() string {
 	escaped := make([]string)
@@ -43,12 +50,12 @@ func (d *Datastore) Close() error {
 }
 
 // UpdateCollection update collection information
-func (d *Datastore) CreateOrUpdateCollection(c *resource.Collection) error {
+func (d *Datastore) CreateOrUpdateCollection(c *Collection) error {
 	err := d.db.Update(func(txn *badger.Txn) error {
 
-		key := c.IPNSAddress
+		keyPrefix := IPNSAddress
 
-		err := txn.Set([]byte("Name"), []byte(c.Name))
+		err := txn.Set([]byte(dbKey{keyPrefix, "Name"}), []byte(c.Name))
 		if err != nil {
 			return err
 		}
