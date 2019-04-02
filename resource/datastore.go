@@ -2,13 +2,15 @@ package resource
 
 import (
 	"strings"
+
 	"github.com/dgraph-io/badger"
 )
 
 const dbKeySep string = "::"
+
 type dbKey []string
 
-func NewDbKeyFromStr(str string) dbKey {
+func newDbKeyFromStr(str string) dbKey {
 	parts := strings.Split(str, "::")
 	for i := 0; i < len(parts); i++ {
 		parts[i] = strings.ReplaceAll(parts[i], "\\:\\:", "::")
@@ -17,14 +19,17 @@ func NewDbKeyFromStr(str string) dbKey {
 }
 
 func (k dbKey) String() string {
-	escaped := make([]string)
+	var escaped []string
 	for _, keyPart := range k {
-		escaped.append(strings.ReplaceAll(keyPart, "::", "\\:\\:"))
+		escaped = append(escaped, strings.ReplaceAll(keyPart, "::", "\\:\\:"))
 	}
-	
+
 	return strings.Join(escaped, "::")
 }
 
+func (k dbKey) Bytes() []byte {
+	return []byte(k.String())
+}
 
 // Datastore is a store for saving resource collections data. Including collections and their resource items.
 // For now it is a struct using BadgerDB. Later on it will be refactored as an interface with multiple database implements.
@@ -49,28 +54,53 @@ func (d *Datastore) Close() error {
 	return d.db.Close()
 }
 
-// UpdateCollection update collection information
+// CreateOrUpdateCollection update collection information
 func (d *Datastore) CreateOrUpdateCollection(c *Collection) error {
 	err := d.db.Update(func(txn *badger.Txn) error {
 
-		// Key IPNSAddress::
-		keyPrefix := IPNSAddress
+		p := dbKey{"collection", c.IPNSAddress}
 
-		err := txn.Set([]byte(dbKey{keyPrefix, "Name"}.String()), []byte(c.Name))
+		err := txn.Set(append(p, "name").Bytes(), []byte(c.Name))
 		if err != nil {
 			return err
 		}
-		err = txn.Set([]byte(dbKey{keyPrefix, "Description"}.String()), []byte(c.Description))
+		err = txn.Set(append(p, "description").Bytes(), []byte(c.Description))
 		if err != nil {
 			return err
 		}
-
-		// Key Collections
-		c, err := txn.Get([]byte("Collections"))
 
 		return nil
 	})
 	return err
 }
 
-func (d *Datastore) ReadCollection
+// ReadCollection reads Collection data from database.
+func (d *Datastore) ReadCollection(ipns string) (Collection, error) {
+	var c Collection
+	err := d.db.View(func(txn *badger.Txn) error {
+		p := dbKey{"collection", ipns}
+
+		item, err := txn.Get(append(p, "name").Bytes())
+		if err != nil {
+			return err
+		}
+		n, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		item, err = txn.Get(append(p, "description").Bytes())
+		if err != nil {
+			return err
+		}
+		d, err := item.ValueCopy(n)
+		if err != nil {
+			return err
+		}
+
+		c = Collection{IPNSAddress: ipns, Name: string(n), Description: string(d)}
+
+		return nil
+	})
+
+	return c, err
+}
