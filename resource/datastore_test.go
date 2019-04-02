@@ -13,6 +13,7 @@ func TestMain(m *testing.M) {
 	// Ensure testdata dir exists
 	_ = os.MkdirAll(testdataDir, os.ModePerm)
 	retCode := m.Run()
+	_ = os.RemoveAll(testdataDir)
 	os.Exit(retCode)
 }
 
