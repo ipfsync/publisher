@@ -35,6 +35,8 @@ func TestDbKey(t *testing.T) {
 func TestDatastore(t *testing.T) {
 	dbPath := filepath.Join(testdataDir, "test.db")
 	ds, err := NewDatastore(dbPath)
+	defer ds.Close()
+
 	if err != nil {
 		t.Errorf("Unable to create Datastore. Error: %s", err)
 	}
@@ -53,6 +55,4 @@ func TestDatastore(t *testing.T) {
 	if cActual.IPNSAddress != c.IPNSAddress || cActual.Name != c.Name || cActual.Description != c.Description {
 		t.Errorf("Actual read collection is not the same as wanted.")
 	}
-
-	ds.Close()
 }
