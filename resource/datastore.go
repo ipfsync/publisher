@@ -105,19 +105,98 @@ func (d *Datastore) ReadCollection(ipns string) (Collection, error) {
 	return c, err
 }
 
+func (d *Datastore) dropPrefix(txn *badger.Txn, prefix dbKey) error {
+	it := txn.NewIterator(badger.DefaultIteratorOptions)
+	defer it.Close()
+
+	for it.Seek(prefix.Bytes()); it.ValidForPrefix(prefix.Bytes()); it.Next() {
+		item := it.Item()
+		err := txn.Delete(item.Key())
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // DelCollection deletes a collection from datastore.
 func (d *Datastore) DelCollection(ipns string) error {
 	err := d.db.Update(func(txn *badger.Txn) error {
-		it := txn.NewIterator(badger.DefaultIteratorOptions)
-		defer it.Close()
-		prefix := dbKey{"collection", ipns}.Bytes()
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			item := it.Item()
-			err := txn.Delete(item.Key())
-			if err != nil {
-				return err
-			}
+		prefix := dbKey{"collection", ipns}
+
+		return d.dropPrefix(txn, prefix)
+	})
+	return err
+}
+
+// CreateOrUpdateItem update collection information
+func (d *Datastore) CreateOrUpdateItem(i *Item) error {
+	err := d.db.Update(func(txn *badger.Txn) error {
+
+		p := dbKey{"item", i.CID}
+
+		err := txn.Set(append(p, "name").Bytes(), []byte(i.Name))
+		if err != nil {
+			return err
 		}
+
+		// Delete old tags
+		prefix := append(p, "tag")
+		err = d.dropPrefix(txn, prefix)
+		if err != nil {
+			return err
+		}
+
+		// Set new tags
+		for _, t := range i.Tags {
+			return d.addItemTagInTxn(txn, i.CID, t)
+		}
+
+		return nil
+	})
+	return err
+}
+
+func (d *Datastore) addItemTagInTxn(txn *badger.Txn, CID string, t Tag) error {
+	itemTagKey := dbKey{"item", CID, "tag", t.String()}.Bytes()
+	err := txn.Set(itemTagKey, []byte(t.String()))
+	if err != nil {
+		return err
+	}
+
+	tagKey := dbKey{"tag", t.String(), CID}.Bytes()
+	err = txn.Set(tagKey, []byte(CID))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// AddItemTag adds a Tag to an Item. If the tag doesn't exist in database, it will be created.
+func (d *Datastore) AddItemTag(CID string, t Tag) error {
+	err := d.db.Update(func(txn *badger.Txn) error {
+		return d.addItemTagInTxn(txn, CID, t)
+	})
+	return err
+}
+
+// RemoveItemTag removes a Tag from an Item.
+func (d *Datastore) RemoveItemTag(CID string, t Tag) error {
+	err := d.db.Update(func(txn *badger.Txn) error {
+		itemTagKey := dbKey{"item", CID, "tag", t.String()}.Bytes()
+		err := txn.Delete(itemTagKey)
+		if err != nil {
+			return err
+		}
+
+		tagKey := dbKey{"tag", t.String(), CID}.Bytes()
+		err = txn.Delete(tagKey)
+		if err != nil {
+			return err
+		}
+
 		return nil
 	})
 	return err
