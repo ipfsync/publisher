@@ -104,3 +104,21 @@ func (d *Datastore) ReadCollection(ipns string) (Collection, error) {
 
 	return c, err
 }
+
+// DelCollection deletes a collection from datastore.
+func (d *Datastore) DelCollection(ipns string) error {
+	err := d.db.Update(func(txn *badger.Txn) error {
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer it.Close()
+		prefix := dbKey{"collection", ipns}.Bytes()
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			item := it.Item()
+			err := txn.Delete(item.Key())
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return err
+}

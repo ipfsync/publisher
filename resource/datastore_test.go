@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/dgraph-io/badger"
 )
 
 var testdataDir = filepath.Join(".", "testdata")
@@ -42,6 +44,7 @@ func TestDatastore(t *testing.T) {
 	}
 	c := &Collection{IPNSAddress: "test.com", Name: "Test Collection", Description: "Test Descripition"}
 
+	// Create
 	err = ds.CreateOrUpdateCollection(c)
 	if err != nil {
 		t.Errorf("Unable to create Collection. Error: %s", err)
@@ -55,4 +58,32 @@ func TestDatastore(t *testing.T) {
 	if cActual.IPNSAddress != c.IPNSAddress || cActual.Name != c.Name || cActual.Description != c.Description {
 		t.Errorf("Actual read collection is not the same as wanted.")
 	}
+
+	// Update
+	c.Name = "Test Collection2"
+	err = ds.CreateOrUpdateCollection(c)
+	if err != nil {
+		t.Errorf("Unable to update Collection. Error: %s", err)
+	}
+
+	cActual, err = ds.ReadCollection(c.IPNSAddress)
+	if err != nil {
+		t.Errorf("Unable to read Collection. Error: %s", err)
+	}
+
+	if cActual.IPNSAddress != c.IPNSAddress || cActual.Name != c.Name || cActual.Description != c.Description {
+		t.Errorf("Actual read collection is not the same as wanted.")
+	}
+
+	// Delete
+	err = ds.DelCollection(c.IPNSAddress)
+	if err != nil {
+		t.Errorf("Unable to delete Collection. Error: %s", err)
+	}
+
+	cActual, err = ds.ReadCollection(c.IPNSAddress)
+	if err != badger.ErrKeyNotFound {
+		t.Errorf("Unable to delete Collection. Error: %s", err)
+	}
+
 }
