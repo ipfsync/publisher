@@ -44,7 +44,7 @@ func TestDatastore(t *testing.T) {
 	}
 	c := &Collection{IPNSAddress: "test.com", Name: "Test Collection", Description: "Test Descripition"}
 
-	// Create
+	// Create collection
 	err = ds.CreateOrUpdateCollection(c)
 	if err != nil {
 		t.Errorf("Unable to create Collection. Error: %s", err)
@@ -59,7 +59,7 @@ func TestDatastore(t *testing.T) {
 		t.Errorf("Actual read collection is not the same as wanted.")
 	}
 
-	// Update
+	// Update collection
 	c.Name = "Test Collection2"
 	err = ds.CreateOrUpdateCollection(c)
 	if err != nil {
@@ -75,7 +75,22 @@ func TestDatastore(t *testing.T) {
 		t.Errorf("Actual read collection is not the same as wanted.")
 	}
 
-	// Delete
+	// Create Item
+	item := &Item{
+		CID:  "Qmcpo2iLBikrdf1d6QU6vXuNb6P7hwrbNPW9kLAH8eG67z",
+		Name: "Quick Start",
+		Tags: []Tag{
+			Tag{"tag1a", "tag1b", "tag1c"},
+			Tag{"tag2a", "tag2b"},
+			Tag{"tag3"},
+		},
+	}
+	err = ds.CreateOrUpdateItem(item)
+	if err != nil {
+		t.Errorf("Unable to create Item. Error: %s", err)
+	}
+
+	// Delete collection
 	err = ds.DelCollection(c.IPNSAddress)
 	if err != nil {
 		t.Errorf("Unable to delete Collection. Error: %s", err)
