@@ -1,6 +1,7 @@
 package resource
 
 import (
+	"reflect"
 	"strings"
 )
 
@@ -29,4 +30,9 @@ func NewTagFromStr(str string) Tag {
 // String implements Stringer interface.
 func (t Tag) String() string {
 	return strings.Join(t, ":")
+}
+
+// Equals check if a tag equals to this tag
+func (t Tag) Equals(t2 Tag) bool {
+	return reflect.DeepEqual(t, t2)
 }

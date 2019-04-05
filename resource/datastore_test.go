@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/dgraph-io/badger"
 )
 
 var testdataDir = filepath.Join(".", "testdata")
@@ -90,6 +88,39 @@ func TestDatastore(t *testing.T) {
 		t.Errorf("Unable to create Item. Error: %s", err)
 	}
 
+	// Read Item
+	itemActual, err := ds.ReadItem(item.CID)
+	if err != nil {
+		t.Errorf("Unable to read Item. Error: %s", err)
+	}
+
+	if itemActual.CID != item.CID || itemActual.Name != item.Name {
+		t.Errorf("Actual read item is not the same as wanted.")
+	}
+
+	for _, tag := range item.Tags {
+		exists := false
+		for _, tagActual := range itemActual.Tags {
+			if tagActual.Equals(tag) {
+				exists = true
+			}
+		}
+		if !exists {
+			t.Errorf("Tag %s doesn't exists in read item", tag)
+		}
+	}
+
+	// Delete Item
+	err = ds.DelItem(item.CID)
+	if err != nil {
+		t.Errorf("Unable to delete Item. Error: %s", err)
+	}
+
+	itemActual, err = ds.ReadItem(item.CID)
+	if err != ErrCIDNotFound {
+		t.Errorf("Item is not deleted.")
+	}
+
 	// Delete collection
 	err = ds.DelCollection(c.IPNSAddress)
 	if err != nil {
@@ -97,8 +128,8 @@ func TestDatastore(t *testing.T) {
 	}
 
 	cActual, err = ds.ReadCollection(c.IPNSAddress)
-	if err != badger.ErrKeyNotFound {
-		t.Errorf("Unable to delete Collection. Error: %s", err)
+	if err != ErrIPNSNotFound {
+		t.Errorf("Collection is not deleted.")
 	}
 
 }
