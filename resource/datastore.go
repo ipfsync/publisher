@@ -349,3 +349,34 @@ func (d *Datastore) AddItemToCollection(cid string, ipns string) error {
 	})
 	return err
 }
+
+// RemoveItemFromCollection removes an Item from a Collection.
+func (d *Datastore) RemoveItemFromCollection(cid string, ipns string) error {
+	err := d.checkCID(cid)
+	if err != nil {
+		return err
+	}
+
+	err = d.checkIPNS(ipns)
+	if err != nil {
+		return err
+	}
+
+	err = d.db.Update(func(txn *badger.Txn) error {
+		kColl := dbKey{"collection", ipns, "item", cid}
+		err := txn.Delete(kColl.Bytes())
+		if err != nil {
+			return err
+		}
+
+		kItem := dbKey{"item", cid, "collection", ipns}
+		err = txn.Delete(kItem.Bytes())
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+	return err
+
+}
