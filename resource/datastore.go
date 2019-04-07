@@ -144,7 +144,9 @@ func (d *Datastore) ReadCollection(ipns string) (*Collection, error) {
 }
 
 func (d *Datastore) dropPrefix(txn *badger.Txn, prefix dbKey) error {
-	it := txn.NewIterator(badger.DefaultIteratorOptions)
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+	it := txn.NewIterator(opts)
 	defer it.Close()
 
 	for it.Seek(prefix.Bytes()); it.ValidForPrefix(prefix.Bytes()); it.Next() {

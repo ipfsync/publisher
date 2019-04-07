@@ -110,6 +110,8 @@ func TestDatastore(t *testing.T) {
 		}
 	}
 
+	// TODO: Test update item
+
 	// Add Tag to Item
 	newTag := Tag{"tag4a", "tag4b", "tag4c", "tag4d"}
 	err = ds.AddItemTag(item.CID, newTag)
@@ -125,6 +127,7 @@ func TestDatastore(t *testing.T) {
 		t.Errorf("Item should has Tag but not.")
 	}
 
+	// Remove Tag from Item
 	err = ds.RemoveItemTag(item.CID, newTag)
 	if err != nil {
 		t.Errorf("Unable to remove Tag from Item. Error: %s", err)
