@@ -110,6 +110,64 @@ func TestDatastore(t *testing.T) {
 		}
 	}
 
+	// Add Tag to Item
+	newTag := Tag{"tag4a", "tag4b", "tag4c", "tag4d"}
+	err = ds.AddItemTag(item.CID, newTag)
+	if err != nil {
+		t.Errorf("Unable to add Tag to Item. Error: %s", err)
+	}
+
+	hasTag, err := ds.HasTag(item.CID, newTag)
+	if err != nil {
+		t.Errorf("Unable to check if Item has Tag. Error: %s", err)
+	}
+	if hasTag == false {
+		t.Errorf("Item should has Tag but not.")
+	}
+
+	err = ds.RemoveItemTag(item.CID, newTag)
+	if err != nil {
+		t.Errorf("Unable to remove Tag from Item. Error: %s", err)
+	}
+
+	hasTag, err = ds.HasTag(item.CID, newTag)
+	if err != nil {
+		t.Errorf("Unable to check if Item has Tag. Error: %s", err)
+	}
+	if hasTag == true {
+		t.Errorf("Item should not has Tag but it has.")
+	}
+
+	// Add Item to Collection
+	err = ds.AddItemToCollection(item.CID, c.IPNSAddress)
+	if err != nil {
+		t.Errorf("Unable to add Item to Collection. Error: %s", err)
+	}
+
+	isIn, err := ds.IsItemInCollection(item.CID, c.IPNSAddress)
+	if err != nil {
+		t.Errorf("Unable to check if Item is in Collection. Error: %s", err)
+	}
+
+	if isIn == false {
+		t.Errorf("Item should be in Collection but not.")
+	}
+
+	// Remove Item From Collection
+	err = ds.RemoveItemFromCollection(item.CID, c.IPNSAddress)
+	if err != nil {
+		t.Errorf("Unable to remove Item from Collection. Error: %s", err)
+	}
+
+	isIn, err = ds.IsItemInCollection(item.CID, c.IPNSAddress)
+	if err != nil {
+		t.Errorf("Unable to check if Item is in Collection. Error: %s", err)
+	}
+
+	if isIn == true {
+		t.Errorf("Item should not be in Collection but it is.")
+	}
+
 	// Delete Item
 	err = ds.DelItem(item.CID)
 	if err != nil {

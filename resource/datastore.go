@@ -259,7 +259,24 @@ func (d *Datastore) DelItem(cid string) error {
 			}
 		}
 
-		p := dbKey{"item", item.CID}
+		// Remove Items from all Collections
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		p := dbKey{"collection"}
+		for it.Seek(p.Bytes()); it.ValidForPrefix(p.Bytes()); it.Next() {
+			item := it.Item()
+			k := newDbKeyFromStr(string(item.Key()))
+			if len(k) == 4 && k[3] == cid {
+				err := txn.Delete(k.Bytes())
+				if err != nil {
+					return err
+				}
+			}
+		}
+		it.Close()
+
+		p = dbKey{"item", item.CID}
 		err = d.dropPrefix(txn, p)
 		return err
 	})
@@ -318,6 +335,24 @@ func (d *Datastore) RemoveItemTag(cid string, t Tag) error {
 		return nil
 	})
 	return err
+}
+
+// HasTag checks if an Item has a Tag.
+func (d *Datastore) HasTag(cid string, t Tag) (bool, error) {
+	item, err := d.ReadItem(cid)
+	if err != nil {
+		return false, err
+	}
+
+	exists := false
+	for _, tag := range item.Tags {
+		if tag.Equals(t) {
+			exists = true
+			break
+		}
+	}
+
+	return exists, nil
 }
 
 // AddItemToCollection adds an Item to a Collection.
@@ -379,4 +414,32 @@ func (d *Datastore) RemoveItemFromCollection(cid string, ipns string) error {
 	})
 	return err
 
+}
+
+// IsItemInCollection checks if an Item belongs to a Collection.
+func (d *Datastore) IsItemInCollection(cid string, ipns string) (bool, error) {
+	err := d.checkCID(cid)
+	if err != nil {
+		return false, err
+	}
+
+	err = d.checkIPNS(ipns)
+	if err != nil {
+		return false, err
+	}
+
+	var exist bool
+	err = d.db.View(func(txn *badger.Txn) error {
+		kColl := dbKey{"collection", ipns, "item", cid}
+		_, err := txn.Get(kColl.Bytes())
+
+		if err == nil {
+			exist = true
+		} else if err == badger.ErrKeyNotFound {
+			err = nil
+		}
+		return err
+	})
+
+	return exist, err
 }
