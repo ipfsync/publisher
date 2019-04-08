@@ -149,9 +149,10 @@ func (d *Datastore) dropPrefix(txn *badger.Txn, prefix dbKey) error {
 	it := txn.NewIterator(opts)
 	defer it.Close()
 
+	var dst []byte
 	for it.Seek(prefix.Bytes()); it.ValidForPrefix(prefix.Bytes()); it.Next() {
 		item := it.Item()
-		err := txn.Delete(item.Key())
+		err := txn.Delete(item.KeyCopy(dst))
 		if err != nil {
 			return err
 		}
@@ -195,6 +196,13 @@ func (d *Datastore) CreateOrUpdateItem(i *Item) error {
 
 		// Set new tags
 		for _, t := range i.Tags {
+			tagKey := dbKey{"tag", t.String(), i.CID}.Bytes()
+			// Delete old tags
+			err = txn.Delete(tagKey)
+			if err != nil {
+				return err
+			}
+
 			d.addItemTagInTxn(txn, i.CID, t)
 		}
 
