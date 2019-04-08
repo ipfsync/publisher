@@ -74,12 +74,13 @@ func TestDatastore(t *testing.T) {
 	}
 
 	// Create Item
+	tag3 := Tag{"tag3"}
 	item := &Item{
 		CID:  "Qmcpo2iLBikrdf1d6QU6vXuNb6P7hwrbNPW9kLAH8eG67z",
 		Name: "Quick Start",
 		Tags: []Tag{
 			Tag{"tag1a", "tag1b", "tag1c"},
-			Tag{"tag2a", "tag2b"},
+			tag3,
 			Tag{"tag3"},
 		},
 	}
@@ -110,7 +111,35 @@ func TestDatastore(t *testing.T) {
 		}
 	}
 
-	// TODO: Test update item
+	// Update item
+	item.Name = "Quick Start Edited"
+	// Tag3 removed
+	item.Tags = []Tag{
+		Tag{"tag1a", "tag1b", "tag1c"},
+		Tag{"tag2a", "tag2b"},
+	}
+
+	err = ds.CreateOrUpdateItem(item)
+	if err != nil {
+		t.Errorf("Unable to update Item. Error: %s", err)
+	}
+
+	itemActual, err = ds.ReadItem(item.CID)
+	if err != nil {
+		t.Errorf("Unable to read Item. Error: %s", err)
+	}
+
+	if itemActual.Name != item.Name {
+		t.Errorf("Actual read item is not the same as wanted.")
+	}
+
+	hasTag, err := ds.HasTag(item.CID, tag3)
+	if err != nil {
+		t.Errorf("Unable to check if Item has Tag. Error: %s", err)
+	}
+	if hasTag == true {
+		t.Errorf("Item should not has Tag3.")
+	}
 
 	// Add Tag to Item
 	newTag := Tag{"tag4a", "tag4b", "tag4c", "tag4d"}
@@ -119,7 +148,7 @@ func TestDatastore(t *testing.T) {
 		t.Errorf("Unable to add Tag to Item. Error: %s", err)
 	}
 
-	hasTag, err := ds.HasTag(item.CID, newTag)
+	hasTag, err = ds.HasTag(item.CID, newTag)
 	if err != nil {
 		t.Errorf("Unable to check if Item has Tag. Error: %s", err)
 	}

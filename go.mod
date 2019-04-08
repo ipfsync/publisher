@@ -9,6 +9,8 @@ require (
 	github.com/golang/protobuf v1.3.1 // indirect
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/stretchr/testify v1.3.0 // indirect
-	golang.org/x/net v0.0.0-20190327214358-63eda1eb0650 // indirect
-	golang.org/x/sys v0.0.0-20190322080309-f49334f85ddc // indirect
+	golang.org/x/crypto v0.0.0-20190404164418-38d8ce5564a5 // indirect
+	golang.org/x/net v0.0.0-20190404232315-eb5bcb51f2a3 // indirect
+	golang.org/x/sys v0.0.0-20190405154228-4b34438f7a67 // indirect
+	golang.org/x/tools v0.0.0-20190407030857-0fdf0c73855b // indirect
 )
