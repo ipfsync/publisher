@@ -42,6 +42,12 @@ func (k dbKey) Bytes() []byte {
 
 // Datastore is a store for saving resource collections data. Including collections and their resource items.
 // For now it is a struct using BadgerDB. Later on it will be refactored as an interface with multiple database implements.
+// Keys:
+// 
+// collection::[ipns]::name
+// collection::[ipns]::description
+// item::[cid]::name
+// item::[cid]::tag::[tagstr]
 type Datastore struct {
 	db *badger.DB
 }
@@ -300,11 +306,15 @@ func (d *Datastore) addItemTagInTxn(txn *badger.Txn, cid string, t Tag) error {
 		return err
 	}
 
-	tagKey := dbKey{"tag", t.String(), cid}.Bytes()
-	err = txn.Set(tagKey, []byte(cid))
+	tagItemKey := dbKey{"tag", t.String(), cid}.Bytes()
+	err = txn.Set(tagItemKey, []byte(cid))
 	if err != nil {
 		return err
 	}
+
+	tagsKey := dbKey{"tags", t.String()}.Bytes()
+	count, err := txn.Get(tagItemKey.Bytes())
+
 
 	return nil
 }
@@ -452,4 +462,25 @@ func (d *Datastore) IsItemInCollection(cid string, ipns string) (bool, error) {
 	})
 
 	return exist, err
+}
+
+// SearchTag searches all available tags with prefix
+func (d *Datastore) SearchTag(prefix string) {
+	err = d.db.View(func(txn *badger.Txn) error {
+		p := dbKey{"tag", prefix}
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+	
+		for it.Seek(p.Bytes()); it.ValidForPrefix(p.Bytes()); it.Next() {
+			item := it.Item()
+			key := newDbKeyFromStr(item.Key())
+
+			if err != nil {
+				return err
+			}
+		}
+	
+	}
 }
