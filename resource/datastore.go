@@ -6,6 +6,8 @@ import (
 
 	"encoding/binary"
 
+	"fmt"
+
 	"github.com/dgraph-io/badger"
 )
 
@@ -15,6 +17,9 @@ var (
 
 	// ErrCIDNotFound is returned when a CID is not found in Datastore.
 	ErrCIDNotFound = errors.New("CID not found")
+
+	// ErrNegativeTagItemCount is returned when the value of tag::[tagStr] in Datastore is negative.
+	ErrNegativeTagItemCount = errors.New("Negative tag item count")
 )
 
 const dbKeySep string = "::"
@@ -279,8 +284,12 @@ func (d *Datastore) DelItem(cid string) error {
 			if err != nil {
 				return err
 			}
+			// Reduce tag::[tagStr] count
+			err = d.updateTagItemCount(txn, t, -1)
+			if err != nil {
+				return err
+			}
 		}
-		// TODO: Reduce tag::[tagStr] count
 
 		// Remove Items from all Collections
 		opts := badger.DefaultIteratorOptions
@@ -341,12 +350,21 @@ func (d *Datastore) updateTagItemCount(txn *badger.Txn, t Tag, diff int) error {
 			return err
 		}
 	} else {
-		cBytes, err = item.ValueCopy(nil)
+		val, err := item.Value()
+		fmt.Println(t)
+		fmt.Println(diff)
+		fmt.Println(val)
+
+		cBytes, err = item.ValueCopy(cBytes)
 		if err != nil {
 			return err
 		}
 
 		c = int(binary.BigEndian.Uint32(cBytes)) + diff
+
+		if c < 0 {
+			return ErrNegativeTagItemCount
+		}
 	}
 	binary.BigEndian.PutUint32(cBytes, uint32(c))
 	err = txn.Set(tagKey, cBytes)
@@ -390,7 +408,11 @@ func (d *Datastore) RemoveItemTag(cid string, t Tag) error {
 			return err
 		}
 
-		// TODO: Reduce tag::[tagStr] count
+		// Reduce tag::[tagStr] count
+		err = d.updateTagItemCount(txn, t, -1)
+		if err != nil {
+			return err
+		}
 
 		return nil
 	})
