@@ -111,6 +111,8 @@ func TestDatastore(t *testing.T) {
 		}
 	}
 
+	// TODO: Test tag::[tagStr] count
+
 	// Update item
 	item.Name = "Quick Start Edited"
 	// Tag3 removed

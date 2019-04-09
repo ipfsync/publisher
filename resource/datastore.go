@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 
+	"encoding/binary"
+
 	"github.com/dgraph-io/badger"
 )
 
@@ -42,12 +44,16 @@ func (k dbKey) Bytes() []byte {
 
 // Datastore is a store for saving resource collections data. Including collections and their resource items.
 // For now it is a struct using BadgerDB. Later on it will be refactored as an interface with multiple database implements.
-// Keys:
-// 
+// Key-Values:
+//
 // collection::[ipns]::name
 // collection::[ipns]::description
+// collection::[ipns]::item::[cid] = [cid]
 // item::[cid]::name
-// item::[cid]::tag::[tagstr]
+// item::[cid]::collection::[ipns] = [ipns]
+// item::[cid]::tag::[tagStr] = [tagStr]
+// tag::[tagStr] = [itemCount]
+// tag::[tagStr]::[cid] = [cid]
 type Datastore struct {
 	db *badger.DB
 }
@@ -274,6 +280,7 @@ func (d *Datastore) DelItem(cid string) error {
 				return err
 			}
 		}
+		// TODO: Reduce tag::[tagStr] count
 
 		// Remove Items from all Collections
 		opts := badger.DefaultIteratorOptions
@@ -312,9 +319,29 @@ func (d *Datastore) addItemTagInTxn(txn *badger.Txn, cid string, t Tag) error {
 		return err
 	}
 
-	tagsKey := dbKey{"tags", t.String()}.Bytes()
-	count, err := txn.Get(tagItemKey.Bytes())
+	tagKey := dbKey{"tag", t.String()}.Bytes()
+	item, err := txn.Get(tagKey)
+	var c uint
+	if err != nil {
+		if err == badger.ErrKeyNotFound {
+			c = 0
+		} else {
+			return err
+		}
+	} else {
+		cBytes, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
 
+		c = uint(binary.BigEndian.Uint32(cBytes)) + 1
+		binary.BigEndian.PutUint32(cBytes, uint32(c))
+
+		err = txn.Set(tagKey, cBytes)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -351,6 +378,8 @@ func (d *Datastore) RemoveItemTag(cid string, t Tag) error {
 		if err != nil {
 			return err
 		}
+
+		// TODO: Reduce tag::[tagStr] count
 
 		return nil
 	})
@@ -465,22 +494,22 @@ func (d *Datastore) IsItemInCollection(cid string, ipns string) (bool, error) {
 }
 
 // SearchTag searches all available tags with prefix
-func (d *Datastore) SearchTag(prefix string) {
-	err = d.db.View(func(txn *badger.Txn) error {
-		p := dbKey{"tag", prefix}
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchValues = false
-		it := txn.NewIterator(opts)
-		defer it.Close()
-	
-		for it.Seek(p.Bytes()); it.ValidForPrefix(p.Bytes()); it.Next() {
-			item := it.Item()
-			key := newDbKeyFromStr(item.Key())
+// func (d *Datastore) SearchTag(prefix string) {
+// 	err = d.db.View(func(txn *badger.Txn) error {
+// 		p := dbKey{"tag", prefix}
+// 		opts := badger.DefaultIteratorOptions
+// 		opts.PrefetchValues = false
+// 		it := txn.NewIterator(opts)
+// 		defer it.Close()
 
-			if err != nil {
-				return err
-			}
-		}
-	
-	}
-}
+// 		for it.Seek(p.Bytes()); it.ValidForPrefix(p.Bytes()); it.Next() {
+// 			item := it.Item()
+// 			key := newDbKeyFromStr(item.Key())
+
+// 			if err != nil {
+// 				return err
+// 			}
+// 		}
+
+// 	})
+// }
