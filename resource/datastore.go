@@ -319,9 +319,21 @@ func (d *Datastore) addItemTagInTxn(txn *badger.Txn, cid string, t Tag) error {
 		return err
 	}
 
+	err = d.updateTagItemCount(txn, t, 1)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// updateTagItemCount update count of a tag
+func (d *Datastore) updateTagItemCount(txn *badger.Txn, t Tag, diff int) error {
+
 	tagKey := dbKey{"tag", t.String()}.Bytes()
 	item, err := txn.Get(tagKey)
-	var c uint
+	var c int
+	cBytes := make([]byte, 4)
 	if err != nil {
 		if err == badger.ErrKeyNotFound {
 			c = 0
@@ -329,18 +341,17 @@ func (d *Datastore) addItemTagInTxn(txn *badger.Txn, cid string, t Tag) error {
 			return err
 		}
 	} else {
-		cBytes, err := item.ValueCopy(nil)
+		cBytes, err = item.ValueCopy(nil)
 		if err != nil {
 			return err
 		}
 
-		c = uint(binary.BigEndian.Uint32(cBytes)) + 1
-		binary.BigEndian.PutUint32(cBytes, uint32(c))
-
-		err = txn.Set(tagKey, cBytes)
-		if err != nil {
-			return err
-		}
+		c = int(binary.BigEndian.Uint32(cBytes)) + diff
+	}
+	binary.BigEndian.PutUint32(cBytes, uint32(c))
+	err = txn.Set(tagKey, cBytes)
+	if err != nil {
+		return err
 	}
 
 	return nil
