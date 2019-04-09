@@ -6,8 +6,6 @@ import (
 
 	"encoding/binary"
 
-	"fmt"
-
 	"github.com/dgraph-io/badger"
 )
 
@@ -345,16 +343,11 @@ func (d *Datastore) updateTagItemCount(txn *badger.Txn, t Tag, diff int) error {
 	cBytes := make([]byte, 4)
 	if err != nil {
 		if err == badger.ErrKeyNotFound {
-			c = 0
+			c = 1
 		} else {
 			return err
 		}
 	} else {
-		val, err := item.Value()
-		fmt.Println(t)
-		fmt.Println(diff)
-		fmt.Println(val)
-
 		cBytes, err = item.ValueCopy(cBytes)
 		if err != nil {
 			return err
