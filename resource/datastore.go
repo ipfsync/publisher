@@ -520,22 +520,35 @@ func (d *Datastore) IsItemInCollection(cid string, ipns string) (bool, error) {
 }
 
 // SearchTag searches all available tags with prefix
-// func (d *Datastore) SearchTag(prefix string) {
-// 	err = d.db.View(func(txn *badger.Txn) error {
-// 		p := dbKey{"tag", prefix}
-// 		opts := badger.DefaultIteratorOptions
-// 		opts.PrefetchValues = false
-// 		it := txn.NewIterator(opts)
-// 		defer it.Close()
+func (d *Datastore) SearchTag(prefix string) ([]Tag, error) {
+	keys := make(map[string]bool)
 
-// 		for it.Seek(p.Bytes()); it.ValidForPrefix(p.Bytes()); it.Next() {
-// 			item := it.Item()
-// 			key := newDbKeyFromStr(item.Key())
+	err := d.db.View(func(txn *badger.Txn) error {
+		p := dbKey{"tag", prefix}
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
 
-// 			if err != nil {
-// 				return err
-// 			}
-// 		}
+		for it.Seek(p.Bytes()); it.ValidForPrefix(p.Bytes()); it.Next() {
+			item := it.Item()
+			keyStr := string(item.Key())
+			key := newDbKeyFromStr(keyStr)
 
-// 	})
-// }
+			keys[key[1]] = true
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	var tags []Tag
+	for k := range keys {
+		tags = append(tags, NewTagFromStr(k))
+	}
+
+	return tags, nil
+}
