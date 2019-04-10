@@ -80,8 +80,8 @@ func TestDatastore(t *testing.T) {
 		Name: "Quick Start",
 		Tags: []Tag{
 			Tag{"tag1a", "tag1b", "tag1c"},
+			Tag{"tag2a", "tag2b"},
 			tag3,
-			Tag{"tag3"},
 		},
 	}
 	err = ds.CreateOrUpdateItem(item)
@@ -111,7 +111,13 @@ func TestDatastore(t *testing.T) {
 		}
 	}
 
-	// TODO: Test tag::[tagStr] count
+	// Test tag item count tag::[tagStr]
+	tagItemCounts, err := ds.ReadTagItemCount(item.Tags)
+	for k, v := range tagItemCounts {
+		if v != 1 {
+			t.Errorf("Tag %s item count should be 1 but get %d", item.Tags[k], v)
+		}
+	}
 
 	// Update item
 	item.Name = "Quick Start Edited"
@@ -143,6 +149,25 @@ func TestDatastore(t *testing.T) {
 		t.Errorf("Item should not has Tag3.")
 	}
 
+	// Test tag item count tag::[tagStr]
+	tagItemCounts, err = ds.ReadTagItemCount(item.Tags)
+	if err != nil {
+		t.Errorf("Unable to read tag item count. Error: %s", err)
+	}
+	for k, v := range tagItemCounts {
+		if v != 1 {
+			t.Errorf("Tag %s item count should be 1 but get %d", item.Tags[k], v)
+		}
+	}
+	// Tag3 should has count 0
+	tagItemCounts, err = ds.ReadTagItemCount([]Tag{tag3})
+	if err != nil {
+		t.Errorf("Unable to read tag item count. Error: %s", err)
+	}
+	if tagItemCounts[0] != 0 {
+		t.Errorf("Tag3 item count should be 0 but get %d", tagItemCounts[0])
+	}
+
 	// Add Tag to Item
 	newTag := Tag{"tag4a", "tag4b", "tag4c", "tag4d"}
 	err = ds.AddItemTag(item.CID, newTag)
@@ -158,6 +183,15 @@ func TestDatastore(t *testing.T) {
 		t.Errorf("Item should has Tag but not.")
 	}
 
+	// newTag should has count 1
+	tagItemCounts, err = ds.ReadTagItemCount([]Tag{newTag})
+	if err != nil {
+		t.Errorf("Unable to read tag item count. Error: %s", err)
+	}
+	if tagItemCounts[0] != 1 {
+		t.Errorf("newTag item count should be 1 but get %d", tagItemCounts[0])
+	}
+
 	// Remove Tag from Item
 	err = ds.RemoveItemTag(item.CID, newTag)
 	if err != nil {
@@ -170,6 +204,15 @@ func TestDatastore(t *testing.T) {
 	}
 	if hasTag == true {
 		t.Errorf("Item should not has Tag but it has.")
+	}
+
+	// newTag should has count 0
+	tagItemCounts, err = ds.ReadTagItemCount([]Tag{newTag})
+	if err != nil {
+		t.Errorf("Unable to read tag item count. Error: %s", err)
+	}
+	if tagItemCounts[0] != 0 {
+		t.Errorf("newTag item count should be 0 but get %d", tagItemCounts[0])
 	}
 
 	// Add Item to Collection

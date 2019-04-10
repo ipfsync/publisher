@@ -193,6 +193,8 @@ func (d *Datastore) DelCollection(ipns string) error {
 
 // CreateOrUpdateItem update collection information
 func (d *Datastore) CreateOrUpdateItem(i *Item) error {
+	iOld, _ := d.ReadItem(i.CID)
+
 	err := d.db.Update(func(txn *badger.Txn) error {
 
 		p := dbKey{"item", i.CID}
@@ -202,23 +204,35 @@ func (d *Datastore) CreateOrUpdateItem(i *Item) error {
 			return err
 		}
 
-		// Delete old tags
-		pTag := append(p, "tag")
-		err = d.dropPrefix(txn, pTag)
-		if err != nil {
-			return err
-		}
-
-		// Set new tags
-		for _, t := range i.Tags {
-			tagKey := dbKey{"tag", t.String(), i.CID}.Bytes()
-			// Delete old tags
-			err = txn.Delete(tagKey)
+		if iOld != nil {
+			// Delete old item::[cid]::tag::[tagStr]
+			pTag := append(p, "tag")
+			err = d.dropPrefix(txn, pTag)
 			if err != nil {
 				return err
 			}
 
-			d.addItemTagInTxn(txn, i.CID, t)
+			// Delete old tag::[tagStr]::[cid]
+			for _, t := range iOld.Tags {
+				tagKey := dbKey{"tag", t.String(), i.CID}.Bytes()
+				err = txn.Delete(tagKey)
+				if err != nil {
+					return err
+				}
+
+				err = d.updateTagItemCount(txn, t, -1)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		// Set new tags
+		for _, t := range i.Tags {
+			err = d.addItemTagInTxn(txn, i.CID, t)
+			if err != nil {
+				return err
+			}
 		}
 
 		return nil
@@ -314,21 +328,35 @@ func (d *Datastore) DelItem(cid string) error {
 }
 
 func (d *Datastore) addItemTagInTxn(txn *badger.Txn, cid string, t Tag) error {
+	tagExist := false
+
 	itemTagKey := dbKey{"item", cid, "tag", t.String()}.Bytes()
-	err := txn.Set(itemTagKey, []byte(t.String()))
+	// Check existence of the item tag
+	_, err := txn.Get(itemTagKey)
+	if err != badger.ErrKeyNotFound {
+		tagExist = true
+	}
+	err = txn.Set(itemTagKey, []byte(t.String()))
 	if err != nil {
 		return err
 	}
 
 	tagItemKey := dbKey{"tag", t.String(), cid}.Bytes()
+	_, err = txn.Get(tagItemKey)
+	if (err != badger.ErrKeyNotFound && tagExist == false) ||
+		(err == badger.ErrKeyNotFound && tagExist == true) {
+		panic("Database integrity error. Maybe you have duplicate tags for an item?")
+	}
 	err = txn.Set(tagItemKey, []byte(cid))
 	if err != nil {
 		return err
 	}
 
-	err = d.updateTagItemCount(txn, t, 1)
-	if err != nil {
-		return err
+	if tagExist == false {
+		err = d.updateTagItemCount(txn, t, 1)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -551,4 +579,38 @@ func (d *Datastore) SearchTag(prefix string) ([]Tag, error) {
 	}
 
 	return tags, nil
+}
+
+// ReadTagItemCount returns []uint that are item counts of []Tag
+func (d *Datastore) ReadTagItemCount(tags []Tag) ([]uint, error) {
+	var counts []uint
+
+	err := d.db.View(func(txn *badger.Txn) error {
+		for _, t := range tags {
+			k := dbKey{"tag", t.String()}
+			item, err := txn.Get(k.Bytes())
+			var c uint
+			if err != nil {
+				// If a tag is not found in db, count 0 for it
+				if err != badger.ErrKeyNotFound {
+					return err
+				}
+			} else {
+				v, err := item.Value()
+				if err != nil {
+					return err
+				}
+				c = uint(binary.BigEndian.Uint32(v))
+			}
+			counts = append(counts, c)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return counts, nil
 }
