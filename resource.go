@@ -6,13 +6,26 @@ import (
 )
 
 // Collection is a collection of resource Items.
+// TODO: Last update timestamp
 type Collection struct {
 	IPNSAddress string // Can be either a IPNS hash or a DNSLink domain
 	Name        string
 	Description string
 }
 
+// Folder belongs to only one collection. It may have a parent folder and multiple sub folders.
+// In one collection, a Folder's name is unique.
+// TODO: Total file size of resources that the folder contains. Including subfolders.
+// TODO: Last update timestamp
+type Folder struct {
+	Name        string
+	IPNSAddress string
+	parent      *Folder
+	children    []Folder
+}
+
 // Item is one item of any kind of resource.
+// TODO: File size
 type Item struct {
 	CID  string
 	Name string
@@ -35,4 +48,9 @@ func (t Tag) String() string {
 // Equals check if a tag equals to this tag
 func (t Tag) Equals(t2 Tag) bool {
 	return reflect.DeepEqual(t, t2)
+}
+
+// IsEmpty checks if a Tag is empty
+func (t Tag) IsEmpty() bool {
+	return len(t) == 0
 }

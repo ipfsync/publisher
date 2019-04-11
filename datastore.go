@@ -45,6 +45,10 @@ func (k dbKey) Bytes() []byte {
 	return []byte(k.String())
 }
 
+func (k dbKey) IsEmpty() bool {
+	return len(k) == 0
+}
+
 // Datastore is a store for saving resource collections data. Including collections and their resource items.
 // For now it is a struct using BadgerDB. Later on it will be refactored as an interface with multiple database implements.
 // Key-Values:
@@ -63,6 +67,10 @@ type Datastore struct {
 
 // NewDatastore creates a new Datastore.
 func NewDatastore(dbPath string) (*Datastore, error) {
+	if dbPath == "" {
+		panic("Invalid dbPath")
+	}
+
 	opts := badger.DefaultOptions
 	opts.Dir = dbPath
 	opts.ValueDir = dbPath
@@ -79,6 +87,10 @@ func (d *Datastore) Close() error {
 }
 
 func (d *Datastore) checkIPNS(ipns string) error {
+	if ipns == "" {
+		panic("Invalid ipns.")
+	}
+
 	err := d.db.View(func(txn *badger.Txn) error {
 		k := dbKey{"collection", ipns, "name"}
 		_, err := txn.Get(k.Bytes())
@@ -91,6 +103,10 @@ func (d *Datastore) checkIPNS(ipns string) error {
 }
 
 func (d *Datastore) checkCID(cid string) error {
+	if cid == "" {
+		panic("Invalid cid.")
+	}
+
 	err := d.db.View(func(txn *badger.Txn) error {
 		k := dbKey{"item", cid, "name"}
 		_, err := txn.Get(k.Bytes())
@@ -104,6 +120,12 @@ func (d *Datastore) checkCID(cid string) error {
 
 // CreateOrUpdateCollection update collection information
 func (d *Datastore) CreateOrUpdateCollection(c *Collection) error {
+	if c.Name == "" || c.IPNSAddress == "" {
+		panic("Invalid parameters.")
+	}
+
+	// TODO: IPNS Address validate
+
 	err := d.db.Update(func(txn *badger.Txn) error {
 
 		p := dbKey{"collection", c.IPNSAddress}
@@ -159,6 +181,10 @@ func (d *Datastore) ReadCollection(ipns string) (*Collection, error) {
 }
 
 func (d *Datastore) dropPrefix(txn *badger.Txn, prefix dbKey) error {
+	if prefix.IsEmpty() {
+		panic("Empty prefix.")
+	}
+
 	opts := badger.DefaultIteratorOptions
 	opts.PrefetchValues = false
 	it := txn.NewIterator(opts)
@@ -193,6 +219,10 @@ func (d *Datastore) DelCollection(ipns string) error {
 
 // CreateOrUpdateItem update collection information
 func (d *Datastore) CreateOrUpdateItem(i *Item) error {
+	if i.CID == "" || i.Name == "" {
+		panic("Invalid parameters.")
+	}
+
 	iOld, _ := d.ReadItem(i.CID)
 
 	err := d.db.Update(func(txn *badger.Txn) error {
@@ -328,6 +358,10 @@ func (d *Datastore) DelItem(cid string) error {
 }
 
 func (d *Datastore) addItemTagInTxn(txn *badger.Txn, cid string, t Tag) error {
+	if cid == "" || t.IsEmpty() {
+		panic("Invalid parameters.")
+	}
+
 	tagExist := false
 
 	itemTagKey := dbKey{"item", cid, "tag", t.String()}.Bytes()
@@ -364,6 +398,9 @@ func (d *Datastore) addItemTagInTxn(txn *badger.Txn, cid string, t Tag) error {
 
 // updateTagItemCount update count of a tag
 func (d *Datastore) updateTagItemCount(txn *badger.Txn, t Tag, diff int) error {
+	if t.IsEmpty() || diff == 0 {
+		panic("Invalid parameters.")
+	}
 
 	tagKey := dbKey{"tag", t.String()}.Bytes()
 	item, err := txn.Get(tagKey)
@@ -398,6 +435,10 @@ func (d *Datastore) updateTagItemCount(txn *badger.Txn, t Tag, diff int) error {
 
 // AddItemTag adds a Tag to an Item. If the tag doesn't exist in database, it will be created.
 func (d *Datastore) AddItemTag(cid string, t Tag) error {
+	if t.IsEmpty() || cid == "" {
+		panic("Invalid parameters.")
+	}
+
 	err := d.checkCID(cid)
 	if err != nil {
 		return err
@@ -411,6 +452,10 @@ func (d *Datastore) AddItemTag(cid string, t Tag) error {
 
 // RemoveItemTag removes a Tag from an Item.
 func (d *Datastore) RemoveItemTag(cid string, t Tag) error {
+	if t.IsEmpty() || cid == "" {
+		panic("Invalid parameters.")
+	}
+
 	err := d.checkCID(cid)
 	if err != nil {
 		return err
@@ -442,6 +487,10 @@ func (d *Datastore) RemoveItemTag(cid string, t Tag) error {
 
 // HasTag checks if an Item has a Tag.
 func (d *Datastore) HasTag(cid string, t Tag) (bool, error) {
+	if t.IsEmpty() || cid == "" {
+		panic("Invalid parameters.")
+	}
+
 	item, err := d.ReadItem(cid)
 	if err != nil {
 		return false, err
@@ -549,6 +598,10 @@ func (d *Datastore) IsItemInCollection(cid string, ipns string) (bool, error) {
 
 // SearchTags searches all available tags with prefix
 func (d *Datastore) SearchTags(prefix string) ([]Tag, error) {
+	if prefix == "" {
+		panic("Invalid prefix.")
+	}
+
 	keys := make(map[string]bool)
 
 	err := d.db.View(func(txn *badger.Txn) error {
@@ -583,10 +636,18 @@ func (d *Datastore) SearchTags(prefix string) ([]Tag, error) {
 
 // ReadTagItemCount returns []uint that are item counts of []Tag
 func (d *Datastore) ReadTagItemCount(tags []Tag) ([]uint, error) {
+	if len(tags) == 0 {
+		panic("Invalid tags.")
+	}
+
 	var counts []uint
 
 	err := d.db.View(func(txn *badger.Txn) error {
 		for _, t := range tags {
+			if t.IsEmpty() {
+				panic("Invalid tag.")
+			}
+
 			k := dbKey{"tag", t.String()}
 			item, err := txn.Get(k.Bytes())
 			var c uint
@@ -614,6 +675,11 @@ func (d *Datastore) ReadTagItemCount(tags []Tag) ([]uint, error) {
 
 	return counts, nil
 }
+
+// CreateFolder creates a new folder
+// func (d *Datastore) CreateFolder(folder *Folder) error {
+
+// }
 
 // TODO: FilterItems() SearchItems()
 // func (d *Datastore) FilterItems(tags []Tag, ipns string) ([]string, error) {
