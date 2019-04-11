@@ -547,8 +547,8 @@ func (d *Datastore) IsItemInCollection(cid string, ipns string) (bool, error) {
 	return exist, err
 }
 
-// SearchTag searches all available tags with prefix
-func (d *Datastore) SearchTag(prefix string) ([]Tag, error) {
+// SearchTags searches all available tags with prefix
+func (d *Datastore) SearchTags(prefix string) ([]Tag, error) {
 	keys := make(map[string]bool)
 
 	err := d.db.View(func(txn *badger.Txn) error {

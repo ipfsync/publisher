@@ -8,12 +8,15 @@ import (
 )
 
 var testdataDir = filepath.Join(".", "testdata")
+var dbPath = filepath.Join(testdataDir, "test.db")
 
 func TestMain(m *testing.M) {
 	// Ensure testdata dir exists
 	_ = os.MkdirAll(testdataDir, os.ModePerm)
+	// Remove old testing datastore
+	_ = os.RemoveAll(dbPath)
 	retCode := m.Run()
-	dbPath := filepath.Join(testdataDir, "test.db")
+	// Cleanup
 	_ = os.RemoveAll(dbPath)
 	os.Exit(retCode)
 }
@@ -33,7 +36,6 @@ func TestDbKey(t *testing.T) {
 }
 
 func TestDatastore(t *testing.T) {
-	dbPath := filepath.Join(testdataDir, "test.db")
 	ds, err := NewDatastore(dbPath)
 	defer ds.Close()
 
@@ -267,4 +269,107 @@ func TestDatastore(t *testing.T) {
 		t.Errorf("Collection is not deleted.")
 	}
 
+}
+
+func TestSearchTags(t *testing.T) {
+	ds, err := NewDatastore(dbPath)
+	defer ds.Close()
+
+	if err != nil {
+		t.Errorf("Unable to create Datastore. Error: %s", err)
+	}
+
+	tag100_1 := Tag{"tag100a", "tag100b", "tag100c"}
+	tag100_2 := Tag{"tag100a", "tag100d"}
+	tag200 := Tag{"tag200a", "tag200b"}
+	tag300 := Tag{"tag300a", "tag300b"}
+	tag400_1 := Tag{"tag400a", "tag400b", "tag400c"}
+	tag400_2 := Tag{"tag400a", "tag400b"}
+	tag400_3 := Tag{"tag400a", "tag400e"}
+	item := &Item{
+		CID:  "Qmcpo2iLBikrdf1d6QU6vXuNb6P7hwrbNPW9kLAH8eG672",
+		Name: "Tag Search Item1",
+		Tags: []Tag{
+			tag100_1,
+			tag200,
+			tag300,
+		},
+	}
+	err = ds.CreateOrUpdateItem(item)
+	if err != nil {
+		t.Errorf("Unable to create Item. Error: %s", err)
+	}
+
+	err = ds.AddItemTag(item.CID, tag100_2)
+	if err != nil {
+		t.Errorf("Unable to add item tag. Error: %s", err)
+	}
+
+	item = &Item{
+		CID:  "Qmcpo2iLBikrdf1d6QU6vXuNb6P7hwrbNPW9kLAH8eG672",
+		Name: "Tag Search Item2",
+		Tags: []Tag{
+			tag400_1,
+			tag400_2,
+			tag400_3,
+		},
+	}
+	err = ds.CreateOrUpdateItem(item)
+	if err != nil {
+		t.Errorf("Unable to create Item. Error: %s", err)
+	}
+
+	tags, err := ds.SearchTags("tag100")
+	if err != nil {
+		t.Errorf("Unable to search tags. Error: %s", err)
+	}
+
+	count := len(tags)
+	if count != 2 {
+		t.Fatalf("Expect 2 result. Actual %d", count)
+	}
+
+	tagOKs := make(map[string]bool)
+	for _, v := range tags {
+		if v.Equals(tag100_1) {
+			tagOKs[tag100_1.String()] = true
+		}
+		if v.Equals(tag100_2) {
+			tagOKs[tag100_2.String()] = true
+		}
+	}
+
+	if v, ok := tagOKs[tag100_1.String()]; !ok || !v {
+		t.Errorf("Wrong tag search result. Can't find %s", tag100_1)
+	}
+	if v, ok := tagOKs[tag100_2.String()]; !ok || !v {
+		t.Errorf("Wrong tag search result. Can't find %s", tag100_2)
+	}
+
+	tags, err = ds.SearchTags("tag400a:tag400b")
+	if err != nil {
+		t.Errorf("Unable to search tags. Error: %s", err)
+	}
+
+	count = len(tags)
+	if count != 2 {
+		t.Fatalf("Expect 2 result. Actual %d", count)
+	}
+
+	tagOKs = make(map[string]bool)
+	for _, v := range tags {
+		if v.Equals(tag400_1) {
+			tagOKs[tag400_1.String()] = true
+		}
+		if v.Equals(tag400_2) {
+			tagOKs[tag400_2.String()] = true
+		}
+	}
+
+	if v, ok := tagOKs[tag400_1.String()]; !ok || !v {
+		t.Errorf("Wrong tag search result. Can't find %s", tag400_1)
+	}
+	if v, ok := tagOKs[tag400_2.String()]; !ok || !v {
+		t.Errorf("Wrong tag search result. Can't find %s", tag400_2)
+	}
 }
