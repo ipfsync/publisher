@@ -18,10 +18,10 @@ type Collection struct {
 // TODO: Total file size of resources that the folder contains. Including subfolders.
 // TODO: Last update timestamp
 type Folder struct {
-	Name        string
+	Path        string
 	IPNSAddress string
-	parent      *Folder
-	children    []Folder
+	Parent      string
+	Children    []string
 }
 
 // Item is one item of any kind of resource.

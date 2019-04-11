@@ -373,3 +373,40 @@ func TestSearchTags(t *testing.T) {
 		t.Errorf("Wrong tag search result. Can't find %s", tag400_2)
 	}
 }
+
+func TestFolders(t *testing.T) {
+	ds, err := NewDatastore(dbPath)
+	defer ds.Close()
+
+	if err != nil {
+		t.Errorf("Unable to create Datastore. Error: %s", err)
+	}
+
+	ipns := "test.com"
+
+	c := &Collection{IPNSAddress: ipns, Name: "Test Collection", Description: "Test Descripition"}
+
+	// Create collection
+	err = ds.CreateOrUpdateCollection(c)
+	if err != nil {
+		t.Errorf("Unable to create Collection. Error: %s", err)
+	}
+
+	// Root folder
+	folder1 := &Folder{Path: "folder1", IPNSAddress: ipns}
+	err = ds.CreateFolder(folder1)
+	if err != nil {
+		t.Errorf("Unable to create folder1. Error: %s", err)
+	}
+
+	folder1Actual, err := ds.ReadFolder(ipns, "folder1")
+	if err != nil {
+		t.Errorf("Unable to create folder1. Error: %s", err)
+	}
+
+	if folder1Actual.Path != folder1.Path {
+		t.Errorf("Actual folder1 is not wanted")
+	}
+
+	// TODO: Test parent/child folder
+}

@@ -6,6 +6,9 @@ import (
 
 	"encoding/binary"
 
+	"bytes"
+	"encoding/gob"
+
 	"github.com/dgraph-io/badger"
 )
 
@@ -18,6 +21,9 @@ var (
 
 	// ErrNegativeTagItemCount is returned when the value of tag::[tagStr] in Datastore is negative.
 	ErrNegativeTagItemCount = errors.New("Negative tag item count")
+
+	// ErrParentFolderNotExists is returned when parent folder doesn't exist.
+	ErrParentFolderNotExists = errors.New("Parent folder doesn't exist")
 )
 
 const dbKeySep string = "::"
@@ -56,6 +62,8 @@ func (k dbKey) IsEmpty() bool {
 // collection::[ipns]::name
 // collection::[ipns]::description
 // collection::[ipns]::item::[cid] = [cid]
+// collection::[ipns]::folder::[folderPath] = [itemCount]
+// collection::[ipns]::folder::[folderPath]::children = [listOfChildFolderNames]
 // item::[cid]::name
 // item::[cid]::collection::[ipns] = [ipns]
 // item::[cid]::tag::[tagStr] = [tagStr]
@@ -677,9 +685,93 @@ func (d *Datastore) ReadTagItemCount(tags []Tag) ([]uint, error) {
 }
 
 // CreateFolder creates a new folder
-// func (d *Datastore) CreateFolder(folder *Folder) error {
+func (d *Datastore) CreateFolder(folder *Folder) error {
+	if folder.Path == "" || folder.IPNSAddress == "" {
+		panic("Invalid folder.")
+	}
 
-// }
+	err := d.checkIPNS(folder.IPNSAddress)
+	if err != nil {
+		return err
+	}
+
+	parts := strings.Split(folder.Path, "/")
+	partsLen := len(parts)
+	if partsLen != 1 {
+		parentPath := strings.Join(parts[:partsLen-1], "/")
+		// Make sure parent exists
+		_, err := d.ReadFolder(folder.IPNSAddress, parentPath)
+		if err != nil {
+			return ErrParentFolderNotExists
+		}
+	}
+
+	err = d.db.Update(func(txn *badger.Txn) error {
+		p := dbKey{"collection", folder.IPNSAddress, "folder", folder.Path}
+
+		// collection::[ipns]::folder::[folderPath] = [itemCount]
+		cBytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(cBytes, uint32(0))
+		err := txn.Set(p.Bytes(), cBytes)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+
+	return err
+}
+
+// ReadFolder reads a folder from Datastore.
+func (d *Datastore) ReadFolder(ipns, path string) (*Folder, error) {
+	if ipns == "" || path == "" {
+		panic("Invalid parameters.")
+	}
+
+	var f *Folder
+
+	err := d.db.View(func(txn *badger.Txn) error {
+		k := dbKey{"collection", ipns, "folder", path}
+
+		// Make sure folder exists in Datastore
+		_, err := txn.Get(k.Bytes())
+		if err != nil {
+			return err
+		}
+
+		item, err := txn.Get(append(k, "children").Bytes())
+		if err != nil && err != badger.ErrKeyNotFound {
+			return err
+		}
+
+		var children []string
+		if item != nil {
+			v, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			buf := bytes.NewBuffer(v)
+			dec := gob.NewDecoder(buf)
+			err = dec.Decode(&children)
+			if err != nil {
+				return err
+			}
+		}
+
+		parts := strings.Split(path, "/")
+		partsLen := len(parts)
+		var parentPath string
+		if partsLen != 1 {
+			parentPath = strings.Join(parts[:partsLen-1], "/")
+		}
+
+		f = &Folder{Path: path, IPNSAddress: ipns, Parent: parentPath, Children: children}
+
+		return nil
+	})
+
+	return f, err
+}
 
 // TODO: FilterItems() SearchItems()
 // func (d *Datastore) FilterItems(tags []Tag, ipns string) ([]string, error) {
