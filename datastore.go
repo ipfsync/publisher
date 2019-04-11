@@ -614,3 +614,8 @@ func (d *Datastore) ReadTagItemCount(tags []Tag) ([]uint, error) {
 
 	return counts, nil
 }
+
+// TODO: FilterItems() SearchItems()
+// func (d *Datastore) FilterItems(tags []Tag, ipns string) ([]string, error) {
+
+// }
