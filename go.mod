@@ -1,4 +1,4 @@
-module github.com/ipfsync/publisher
+module github.com/ipfsync/resource
 
 go 1.12
 

@@ -1,1 +1,1 @@
-package publisher
+package resource
