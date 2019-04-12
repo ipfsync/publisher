@@ -59,15 +59,21 @@ func (k dbKey) IsEmpty() bool {
 // For now it is a struct using BadgerDB. Later on it will be refactored as an interface with multiple database implements.
 // Key-Values:
 //
+// collections::[ipns] = [ipns]
 // collection::[ipns]::name
 // collection::[ipns]::description
 // collection_item::[ipns]::[cid] = [cid]
-// collection_folder::[ipns]::[folderPath] = [itemCount]
-// collection_folder::[ipns]::[folderPath]::children = [listOfChildFolderNames]
+// folders::[ipns]::[folderPath] = [folderPath]
+// folder::[ipns]::[folderPath]::count = [itemCount]
+// folder::[ipns]::[folderPath]::children = [listOfChildFolderNames]
+// folder::[ipns]::[folderPath]::items = [listOfItemsFolderContains]
+// items::[cid] = [cid]
 // item::[cid]::name
 // item_collection::[cid]::[ipns] = [ipns]
 // item_tag::[cid]::[tagStr] = [tagStr]
-// tag::[tagStr] = [itemCount]
+// item_folder::[cid]::[ipns]::[folderPath] = [folderPath]
+// tags::[tagStr] = [tagStr]
+// tag::[tagStr].count = [itemCount]
 // tag_item::[tagStr]::[cid] = [cid]
 type Datastore struct {
 	db *badger.DB
@@ -100,7 +106,7 @@ func (d *Datastore) checkIPNS(ipns string) error {
 	}
 
 	err := d.db.View(func(txn *badger.Txn) error {
-		k := dbKey{"collection", ipns, "name"}
+		k := dbKey{"collections", ipns}
 		_, err := txn.Get(k.Bytes())
 		return err
 	})
@@ -116,7 +122,7 @@ func (d *Datastore) checkCID(cid string) error {
 	}
 
 	err := d.db.View(func(txn *badger.Txn) error {
-		k := dbKey{"item", cid, "name"}
+		k := dbKey{"items", cid}
 		_, err := txn.Get(k.Bytes())
 		return err
 	})
@@ -136,7 +142,13 @@ func (d *Datastore) CreateOrUpdateCollection(c *Collection) error {
 
 	err := d.db.Update(func(txn *badger.Txn) error {
 
-		p := dbKey{"collection", c.IPNSAddress}
+		p := dbKey{"collections", c.IPNSAddress}
+		err := txn.Set(p.Bytes(), []byte(c.IPNSAddress))
+		if err != nil {
+			return err
+		}
+
+		p = dbKey{"collection", c.IPNSAddress}
 
 		err := txn.Set(append(p, "name").Bytes(), []byte(c.Name))
 		if err != nil {
@@ -211,6 +223,7 @@ func (d *Datastore) dropPrefix(txn *badger.Txn, prefix dbKey) error {
 }
 
 // DelCollection deletes a collection from datastore.
+// Deleting a collection won't delete items that belongs to the collection.
 func (d *Datastore) DelCollection(ipns string) error {
 	err := d.checkIPNS(ipns)
 	if err != nil {
@@ -218,8 +231,14 @@ func (d *Datastore) DelCollection(ipns string) error {
 	}
 
 	err = d.db.Update(func(txn *badger.Txn) error {
+		k := dbKey{"collections", ipns}
+		err := txn.Delete(k.Bytes())
+		if err != nil {
+			return err
+		}
+
 		prefix := dbKey{"collection", ipns}
-		err := d.dropPrefix(txn, prefix)
+		err = d.dropPrefix(txn, prefix)
 		if err != nil {
 			return err
 		}
@@ -230,11 +249,19 @@ func (d *Datastore) DelCollection(ipns string) error {
 			return err
 		}
 
-		prefix = dbKey{"collection_folder", ipns}
+		prefix = dbKey{"folders", ipns}
 		err = d.dropPrefix(txn, prefix)
 		if err != nil {
 			return err
 		}
+
+		prefix = dbKey{"folder", ipns}
+		err = d.dropPrefix(txn, prefix)
+		if err != nil {
+			return err
+		}
+
+		// TODO: Delete item-folder relationship
 
 		return nil
 	})
@@ -251,8 +278,14 @@ func (d *Datastore) CreateOrUpdateItem(i *Item) error {
 
 	err := d.db.Update(func(txn *badger.Txn) error {
 
-		k := dbKey{"item", i.CID, "name"}
-		err := txn.Set(k.Bytes(), []byte(i.Name))
+		k := dbKey{"items", i.CID}
+		err := txn.Set(k.Bytes(), []byte(i.CID))
+		if err != nil {
+			return err
+		}
+
+		k = dbKey{"item", i.CID, "name"}
+		err = txn.Set(k.Bytes(), []byte(i.Name))
 		if err != nil {
 			return err
 		}
@@ -371,6 +404,14 @@ func (d *Datastore) DelItem(cid string) error {
 		}
 		it.Close()
 
+		// TODO: Remove item from folders
+
+		p = dbKey{"items", item.CID}
+		err = d.dropPrefix(txn, p)
+		if err != nil {
+			return err
+		}
+
 		p = dbKey{"item", item.CID}
 		err = d.dropPrefix(txn, p)
 		if err != nil {
@@ -420,6 +461,13 @@ func (d *Datastore) addItemTagInTxn(txn *badger.Txn, cid string, t Tag) error {
 	}
 
 	if tagExist == false {
+
+		tagsKey := dbKey{"tags", t.String()}.Bytes()
+		err = txn.Set(tagsKey, []byte(t.String()))
+		if err != nil {
+			return err
+		}
+
 		err = d.updateTagItemCount(txn, t, 1)
 		if err != nil {
 			return err
@@ -435,7 +483,7 @@ func (d *Datastore) updateTagItemCount(txn *badger.Txn, t Tag, diff int) error {
 		panic("Invalid parameters.")
 	}
 
-	tagKey := dbKey{"tag", t.String()}.Bytes()
+	tagKey := dbKey{"tag", t.String(), "count"}.Bytes()
 	item, err := txn.Get(tagKey)
 	var c int
 	cBytes := make([]byte, 4)
@@ -461,6 +509,20 @@ func (d *Datastore) updateTagItemCount(txn *badger.Txn, t Tag, diff int) error {
 	err = txn.Set(tagKey, cBytes)
 	if err != nil {
 		return err
+	}
+
+	// No item is referring this tag, delete it
+	if c == 0 {
+		p := dbKey{"tags", t.String()}
+		err = d.dropPrefix(txn, p)
+		if err != nil {
+			return err
+		}
+		p = dbKey{"tag", t.String()}
+		err = d.dropPrefix(txn, p)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -638,7 +700,7 @@ func (d *Datastore) SearchTags(prefix string) ([]Tag, error) {
 	keys := make(map[string]bool)
 
 	err := d.db.View(func(txn *badger.Txn) error {
-		p := dbKey{"tag", prefix}
+		p := dbKey{"tags", prefix}
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
 		it := txn.NewIterator(opts)
@@ -681,7 +743,7 @@ func (d *Datastore) ReadTagItemCount(tags []Tag) ([]uint, error) {
 				panic("Invalid tag.")
 			}
 
-			k := dbKey{"tag", t.String()}
+			k := dbKey{"tag", t.String(), "count"}
 			item, err := txn.Get(k.Bytes())
 			var c uint
 			if err != nil {
@@ -722,8 +784,9 @@ func (d *Datastore) CreateFolder(folder *Folder) error {
 
 	parts := strings.Split(folder.Path, "/")
 	partsLen := len(parts)
+	var parentPath string
 	if partsLen != 1 {
-		parentPath := strings.Join(parts[:partsLen-1], "/")
+		parentPath = strings.Join(parts[:partsLen-1], "/")
 		// Make sure parent exists
 		_, err := d.ReadFolder(folder.IPNSAddress, parentPath)
 		if err != nil {
@@ -732,15 +795,23 @@ func (d *Datastore) CreateFolder(folder *Folder) error {
 	}
 
 	err = d.db.Update(func(txn *badger.Txn) error {
-		p := dbKey{"collection_folder", folder.IPNSAddress, folder.Path}
+		p := dbKey{"folders", folder.IPNSAddress, folder.Path}
 
-		// collection::[ipns]::folder::[folderPath] = [itemCount]
+		// collection_folder::[ipns]::[folderPath] = [itemCount]
 		cBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(cBytes, uint32(0))
 		err := txn.Set(p.Bytes(), cBytes)
 		if err != nil {
 			return err
 		}
+
+		if parentPath != "" {
+			// Add this folder to parent's children list
+			// Parent's Children key: collection_folder::[ipns]::[folderPath]::children
+			pck := dbKey{"collection_folder", folder.IPNSAddress, parentPath, "children"}
+			item, err := txn.Get(pck.Bytes())
+		}
+
 		return nil
 	})
 
