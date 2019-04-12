@@ -8,10 +8,10 @@ require (
 	github.com/dgryski/go-farm v0.0.0-20190323231341-8198c7b169ec // indirect
 	github.com/golang/protobuf v1.3.1 // indirect
 	github.com/pkg/errors v0.8.1 // indirect
-	github.com/stretchr/testify v1.3.0 // indirect
-	github.com/thoas/go-funk v0.0.0-20190407194523-c43409e2d5de
-	golang.org/x/crypto v0.0.0-20190404164418-38d8ce5564a5 // indirect
+	github.com/stretchr/objx v0.2.0 // indirect
+	github.com/thoas/go-funk v0.4.0
+	golang.org/x/crypto v0.0.0-20190411191339-88737f569e3a // indirect
 	golang.org/x/net v0.0.0-20190404232315-eb5bcb51f2a3 // indirect
-	golang.org/x/sys v0.0.0-20190405154228-4b34438f7a67 // indirect
-	golang.org/x/tools v0.0.0-20190407030857-0fdf0c73855b // indirect
+	golang.org/x/sys v0.0.0-20190411185658-b44545bcd369 // indirect
+	golang.org/x/tools v0.0.0-20190411180116-681f9ce8ac52 // indirect
 )
