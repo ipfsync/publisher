@@ -869,6 +869,8 @@ func (d *Datastore) ReadFolder(ipns, path string) (*Folder, error) {
 	return f, err
 }
 
+// TODO: IsFolderExists() MoveFolder()
+
 // TODO: FilterItems() SearchItems()
 // func (d *Datastore) FilterItems(tags []Tag, ipns string) ([]string, error) {
 
