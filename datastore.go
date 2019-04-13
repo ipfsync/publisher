@@ -824,6 +824,11 @@ func (d *Datastore) ReadFolder(ipns, path string) (*Folder, error) {
 		panic("Invalid parameters.")
 	}
 
+	_, err := d.IsFolderExists(ipns, path)
+	if err != nil {
+		return nil, err
+	}
+
 	var f *Folder
 
 	err := d.db.View(func(txn *badger.Txn) error {
@@ -869,7 +874,33 @@ func (d *Datastore) ReadFolder(ipns, path string) (*Folder, error) {
 	return f, err
 }
 
-// TODO: IsFolderExists() MoveFolder()
+// IsFolderExists checkes if a folder exists.
+func (d *Datastore) IsFolderExists(ipns, path string) (bool, error) {
+	exists := false
+
+	err := d.db.View(func(txn *badger.Txn) error {
+		k := dbKey{"folders", ipns, path}
+
+		_, err := txn.Get(k.Bytes())
+		if err != nil {
+			if err != badger.ErrKeyNotFound {
+				return err
+			}
+		} else {
+			exists = true
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+// TODO: MoveFolder()
+// TODO: DelFolder() AddItemToFolder() RemoveItemFromFolder()
 
 // TODO: FilterItems() SearchItems()
 // func (d *Datastore) FilterItems(tags []Tag, ipns string) ([]string, error) {
