@@ -150,7 +150,7 @@ func (d *Datastore) CreateOrUpdateCollection(c *Collection) error {
 
 		p = dbKey{"collection", c.IPNSAddress}
 
-		err := txn.Set(append(p, "name").Bytes(), []byte(c.Name))
+		err = txn.Set(append(p, "name").Bytes(), []byte(c.Name))
 		if err != nil {
 			return err
 		}
@@ -795,21 +795,60 @@ func (d *Datastore) CreateFolder(folder *Folder) error {
 	}
 
 	err = d.db.Update(func(txn *badger.Txn) error {
-		p := dbKey{"folders", folder.IPNSAddress, folder.Path}
+		k := dbKey{"folders", folder.IPNSAddress, folder.Path}
+		err := txn.Set(k.Bytes(), []byte(folder.Path))
+		if err != nil {
+			return err
+		}
+
+		k = dbKey{"folder", folder.IPNSAddress, folder.Path, "count"}
 
 		// collection_folder::[ipns]::[folderPath] = [itemCount]
 		cBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(cBytes, uint32(0))
-		err := txn.Set(p.Bytes(), cBytes)
+		err = txn.Set(k.Bytes(), cBytes)
 		if err != nil {
 			return err
 		}
 
 		if parentPath != "" {
 			// Add this folder to parent's children list
-			// Parent's Children key: collection_folder::[ipns]::[folderPath]::children
-			pck := dbKey{"collection_folder", folder.IPNSAddress, parentPath, "children"}
+			// Parent's Children key: folder::[ipns]::[folderPath]::children
+			pck := dbKey{"folder", folder.IPNSAddress, parentPath, "children"}
 			item, err := txn.Get(pck.Bytes())
+			var children []string
+			if err != nil && err != badger.ErrKeyNotFound {
+				return err
+			}
+
+			var buf bytes.Buffer
+			if item != nil {
+				v, err := item.ValueCopy(nil)
+				if err != nil {
+					return err
+				}
+
+				// Read children
+				buf = *bytes.NewBuffer(v)
+				dec := gob.NewDecoder(&buf)
+				err = dec.Decode(&children)
+				if err != nil {
+					return err
+				}
+			}
+
+			// Add folder to children
+			children = append(children, folder.Path)
+
+			// Save back
+			buf.Reset()
+			enc := gob.NewEncoder(&buf)
+			err = enc.Encode(children)
+			if err != nil {
+				return err
+			}
+
+			txn.Set(pck.Bytes(), buf.Bytes())
 		}
 
 		return nil
@@ -831,14 +870,8 @@ func (d *Datastore) ReadFolder(ipns, path string) (*Folder, error) {
 
 	var f *Folder
 
-	err := d.db.View(func(txn *badger.Txn) error {
-		k := dbKey{"collection_folder", ipns, path}
-
-		// Make sure folder exists in Datastore
-		_, err := txn.Get(k.Bytes())
-		if err != nil {
-			return err
-		}
+	err = d.db.View(func(txn *badger.Txn) error {
+		k := dbKey{"folder", ipns, path}
 
 		item, err := txn.Get(append(k, "children").Bytes())
 		if err != nil && err != badger.ErrKeyNotFound {

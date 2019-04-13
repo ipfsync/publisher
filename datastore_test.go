@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/thoas/go-funk"
 )
 
 var testdataDir = filepath.Join(".", "testdata")
@@ -401,12 +403,54 @@ func TestFolders(t *testing.T) {
 
 	folder1Actual, err := ds.ReadFolder(ipns, "folder1")
 	if err != nil {
-		t.Errorf("Unable to create folder1. Error: %s", err)
+		t.Errorf("Unable to read folder1. Error: %s", err)
 	}
 
 	if folder1Actual.Path != folder1.Path {
 		t.Errorf("Actual folder1 is not wanted")
 	}
 
-	// TODO: Test parent/child folder
+	// Test parent/child folder
+	// folder2 is a child of folder1
+	folder2 := &Folder{Path: "folder1/folder2", IPNSAddress: ipns}
+	err = ds.CreateFolder(folder2)
+	if err != nil {
+		t.Errorf("Unable to create folder2. Error: %s", err)
+	}
+
+	// folder3 is a child of folder1
+	folder3 := &Folder{Path: "folder1/folder3", IPNSAddress: ipns}
+	err = ds.CreateFolder(folder3)
+	if err != nil {
+		t.Errorf("Unable to create folder3. Error: %s", err)
+	}
+
+	// folder4 is a child of folder2
+	folder4 := &Folder{Path: "folder1/folder2/folder4", IPNSAddress: ipns}
+	err = ds.CreateFolder(folder4)
+	if err != nil {
+		t.Errorf("Unable to create folder3. Error: %s", err)
+	}
+
+	folder1Actual, err = ds.ReadFolder(ipns, "folder1")
+	if err != nil {
+		t.Errorf("Unable to read folder1. Error: %s", err)
+	}
+
+	if !funk.ContainsString(folder1Actual.Children, "folder1/folder2") {
+		t.Error("folder2 should be in folder1's children")
+	}
+
+	if !funk.ContainsString(folder1Actual.Children, "folder1/folder3") {
+		t.Error("folder3 should be in folder1's children")
+	}
+
+	folder2Actual, err := ds.ReadFolder(ipns, "folder1/folder2")
+	if err != nil {
+		t.Errorf("Unable to create folder2. Error: %s", err)
+	}
+
+	if !funk.ContainsString(folder2Actual.Children, "folder1/folder2/folder4") {
+		t.Error("folder4 should be in folder2's children")
+	}
 }
