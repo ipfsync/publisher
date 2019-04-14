@@ -932,7 +932,7 @@ func (d *Datastore) IsFolderExists(ipns, path string) (bool, error) {
 	return exists, nil
 }
 
-// TODO: MoveFolder()
+// TODO: MoveFolder() CopyFolder()
 // TODO: DelFolder() AddItemToFolder() RemoveItemFromFolder()
 
 // TODO: FilterItems() SearchItems()
