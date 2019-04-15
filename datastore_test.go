@@ -395,7 +395,7 @@ func TestFolders(t *testing.T) {
 	}
 
 	folder1 := &Folder{Path: "folder1", IPNSAddress: ipns}
-	err = ds.CreateFolder(folder1)
+	err = ds.CreateOrUpdateFolder(folder1)
 	if err != nil {
 		t.Errorf("Unable to create folder1. Error: %s", err)
 	}
@@ -417,28 +417,33 @@ func TestFolders(t *testing.T) {
 	if rootActual.Path != "" {
 		t.Errorf("Actual Root folder's path is not wanted")
 	}
-	if !funk.ContainsString(rootActual.Children, "folder1") {
+
+	children, err := ds.ReadFolderChildren(rootActual)
+	if err != nil {
+		t.Errorf("Unable to read children of Root folder. Error: %s", err)
+	}
+	if !funk.ContainsString(children, "folder1") {
 		t.Error("folder1 should be in root folder's children")
 	}
 
 	// Test parent/child folder
 	// folder2 is a child of folder1
 	folder2 := &Folder{Path: "folder1/folder2", IPNSAddress: ipns}
-	err = ds.CreateFolder(folder2)
+	err = ds.CreateOrUpdateFolder(folder2)
 	if err != nil {
 		t.Errorf("Unable to create folder2. Error: %s", err)
 	}
 
 	// folder3 is a child of folder1
 	folder3 := &Folder{Path: "folder1/folder3", IPNSAddress: ipns}
-	err = ds.CreateFolder(folder3)
+	err = ds.CreateOrUpdateFolder(folder3)
 	if err != nil {
 		t.Errorf("Unable to create folder3. Error: %s", err)
 	}
 
 	// folder4 is a child of folder2
 	folder4 := &Folder{Path: "folder1/folder2/folder4", IPNSAddress: ipns}
-	err = ds.CreateFolder(folder4)
+	err = ds.CreateOrUpdateFolder(folder4)
 	if err != nil {
 		t.Errorf("Unable to create folder3. Error: %s", err)
 	}
@@ -448,11 +453,15 @@ func TestFolders(t *testing.T) {
 		t.Errorf("Unable to read folder1. Error: %s", err)
 	}
 
-	if !funk.ContainsString(folder1Actual.Children, "folder1/folder2") {
+	children, err = ds.ReadFolderChildren(folder1Actual)
+	if err != nil {
+		t.Errorf("Unable to read children of folder1. Error: %s", err)
+	}
+	if !funk.ContainsString(children, "folder1/folder2") {
 		t.Error("folder2 should be in folder1's children")
 	}
 
-	if !funk.ContainsString(folder1Actual.Children, "folder1/folder3") {
+	if !funk.ContainsString(children, "folder1/folder3") {
 		t.Error("folder3 should be in folder1's children")
 	}
 
@@ -461,7 +470,11 @@ func TestFolders(t *testing.T) {
 		t.Errorf("Unable to create folder2. Error: %s", err)
 	}
 
-	if !funk.ContainsString(folder2Actual.Children, "folder1/folder2/folder4") {
+	children, err = ds.ReadFolderChildren(folder2Actual)
+	if err != nil {
+		t.Errorf("Unable to read children of folder1/folder2. Error: %s", err)
+	}
+	if !funk.ContainsString(children, "folder1/folder2/folder4") {
 		t.Error("folder4 should be in folder2's children")
 	}
 }

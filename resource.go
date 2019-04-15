@@ -14,14 +14,24 @@ type Collection struct {
 }
 
 // Folder belongs to only one collection. It may have a parent folder and multiple sub folders.
-// In one collection, a Folder's name is unique.
+// In one collection, a Folder's path is unique.
+// If path is "", it's the root directory of a collection
 // TODO: Total file size of resources that the folder contains. Including subfolders.
 // TODO: Last update timestamp
 type Folder struct {
 	IPNSAddress string
 	Path        string
-	Parent      string
-	Children    []string
+}
+
+// ParentPath return parent paths of the folder
+func (f *Folder) ParentPath() string {
+	parts := strings.Split(f.Path, "/")
+	partsLen := len(parts)
+	var parentPath string
+	if partsLen != 1 {
+		parentPath = strings.Join(parts[:partsLen-1], "/")
+	}
+	return parentPath
 }
 
 // Item is one item of any kind of resource.
