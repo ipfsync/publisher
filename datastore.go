@@ -30,6 +30,9 @@ var (
 
 	// ErrItemNotInFolder is returned when the item is not in the folder.
 	ErrItemNotInFolder = errors.New("Item is not in the folder")
+
+	// ErrItemInCollection is returned when the item is already in the collection.
+	ErrItemInCollection = errors.New("Item is already in the collection")
 )
 
 const dbKeySep string = "::"
@@ -166,6 +169,14 @@ func (d *Datastore) CreateOrUpdateCollection(c *Collection) error {
 
 		return nil
 	})
+
+	if err != nil {
+		return err
+	}
+
+	// Create root folder
+	err = d.assertParent(&Folder{IPNSAddress: c.IPNSAddress})
+
 	return err
 }
 
@@ -236,8 +247,14 @@ func (d *Datastore) DelCollection(ipns string) error {
 	}
 
 	err = d.db.Update(func(txn *badger.Txn) error {
+
+		items, err := d.ReadCollectionItems(ipns)
+		if err != nil {
+			return err
+		}
+
 		k := dbKey{"collections", ipns}
-		err := txn.Delete(k.Bytes())
+		err = txn.Delete(k.Bytes())
 		if err != nil {
 			return err
 		}
@@ -266,7 +283,20 @@ func (d *Datastore) DelCollection(ipns string) error {
 			return err
 		}
 
-		// TODO: Delete item-folder relationship
+		// Delete item-folder / item-collection relationship
+		for _, v := range items {
+			p := dbKey{"item_folder", v, ipns}
+			err = d.dropPrefix(txn, p)
+			if err != nil {
+				return err
+			}
+
+			k = dbKey{"item_collection", v, ipns}
+			err = txn.Delete(k.Bytes())
+			if err != nil {
+				return err
+			}
+		}
 
 		return nil
 	})
@@ -409,7 +439,20 @@ func (d *Datastore) DelItem(cid string) error {
 		}
 		it.Close()
 
-		// TODO: Remove item from folders
+		// Remove item from all folders
+		it = txn.NewIterator(opts)
+		p = dbKey{"folder_item"}
+		for it.Seek(p.Bytes()); it.ValidForPrefix(p.Bytes()); it.Next() {
+			item := it.Item()
+			k := newDbKeyFromStr(string(item.Key()))
+			if k[3] == cid {
+				err := txn.Delete(k.Bytes())
+				if err != nil {
+					return err
+				}
+			}
+		}
+		it.Close()
 
 		p = dbKey{"items", item.CID}
 		err = d.dropPrefix(txn, p)
@@ -430,6 +473,10 @@ func (d *Datastore) DelItem(cid string) error {
 		}
 
 		p = dbKey{"item_tag", item.CID}
+		err = d.dropPrefix(txn, p)
+		return err
+
+		p = dbKey{"item_folder", item.CID}
 		err = d.dropPrefix(txn, p)
 		return err
 	})
@@ -609,17 +656,14 @@ func (d *Datastore) HasTag(cid string, t Tag) (bool, error) {
 
 // AddItemToCollection adds an Item to a Collection.
 func (d *Datastore) AddItemToCollection(cid string, ipns string) error {
-	err := d.checkCID(cid)
+	// Check if the item is already in the collection
+	exists, err := d.IsItemInCollection(cid, ipns)
 	if err != nil {
 		return err
 	}
-
-	err = d.checkIPNS(ipns)
-	if err != nil {
-		return err
+	if exists {
+		return ErrItemInCollection
 	}
-
-	// TODO: Check if the item is already in the collection
 
 	err = d.db.Update(func(txn *badger.Txn) error {
 		kColl := dbKey{"collection_item", ipns, cid}
@@ -634,10 +678,15 @@ func (d *Datastore) AddItemToCollection(cid string, ipns string) error {
 			return err
 		}
 
-		// TODO: Add item to root folder
-
 		return nil
 	})
+
+	if err != nil {
+		return err
+	}
+
+	// Add item to root folder
+	err = d.AddItemToFolder(cid, &Folder{IPNSAddress: ipns})
 	return err
 }
 
@@ -654,19 +703,50 @@ func (d *Datastore) RemoveItemFromCollection(cid string, ipns string) error {
 	}
 
 	err = d.db.Update(func(txn *badger.Txn) error {
-		kColl := dbKey{"collection_item", ipns, cid}
-		err := txn.Delete(kColl.Bytes())
+		// Remove item from folders of collection
+		var paths []string
+		p := dbKey{"item_folder", cid, ipns}
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+
+		for it.Seek(p.Bytes()); it.ValidForPrefix(p.Bytes()); it.Next() {
+			item := it.Item()
+			keyStr := string(item.Key())
+			key := newDbKeyFromStr(keyStr)
+
+			paths = append(paths, key[3])
+		}
+		it.Close()
+
+		// drop item_folder::[cid]::[ipns]::[folderPath] = [folderPath]
+		err := d.dropPrefix(txn, p)
 		if err != nil {
 			return err
 		}
 
-		kItem := dbKey{"item_collection", cid, ipns}
-		err = txn.Delete(kItem.Bytes())
+		var k dbKey
+
+		// folder_item::[ipns]::[folderPath]::[cid] = [cid]
+		for _, v := range paths {
+			k = dbKey{"folder_item", ipns, v, cid}
+			err = txn.Delete(k.Bytes())
+			if err != nil {
+				return err
+			}
+		}
+
+		k = dbKey{"collection_item", ipns, cid}
+		err = txn.Delete(k.Bytes())
 		if err != nil {
 			return err
 		}
 
-		// TODO: Remove item from folder
+		k = dbKey{"item_collection", cid, ipns}
+		err = txn.Delete(k.Bytes())
+		if err != nil {
+			return err
+		}
 
 		return nil
 	})
@@ -688,7 +768,7 @@ func (d *Datastore) IsItemInCollection(cid string, ipns string) (bool, error) {
 
 	var exist bool
 	err = d.db.View(func(txn *badger.Txn) error {
-		kColl := dbKey{"collection_item", ipns, cid}
+		kColl := dbKey{"item_collection", cid, ipns}
 		_, err := txn.Get(kColl.Bytes())
 
 		if err == nil {
@@ -1053,7 +1133,7 @@ func (d *Datastore) IsItemInFolder(cid string, folder *Folder) (bool, error) {
 	return inFolder, err
 }
 
-// ReadFolderItems returns all items in a folder
+// ReadFolderItems returns all items' CID in a folder
 func (d *Datastore) ReadFolderItems(folder *Folder) ([]string, error) {
 	exists, err := d.IsFolderPathExists(folder.IPNSAddress, folder.Path)
 	if err != nil {
@@ -1077,6 +1157,35 @@ func (d *Datastore) ReadFolderItems(folder *Folder) ([]string, error) {
 			key := newDbKeyFromStr(keyStr)
 
 			items = append(items, key[3])
+		}
+
+		return nil
+	})
+
+	return items, err
+}
+
+// ReadCollectionItems returns all items' CID in a collection
+func (d *Datastore) ReadCollectionItems(ipns string) ([]string, error) {
+	err := d.checkIPNS(ipns)
+	if err != nil {
+		return nil, err
+	}
+
+	var items []string
+	err = d.db.View(func(txn *badger.Txn) error {
+		p := dbKey{"collection_item", ipns}
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Seek(p.Bytes()); it.ValidForPrefix(p.Bytes()); it.Next() {
+			item := it.Item()
+			keyStr := string(item.Key())
+			key := newDbKeyFromStr(keyStr)
+
+			items = append(items, key[2])
 		}
 
 		return nil

@@ -234,6 +234,15 @@ func TestDatastore(t *testing.T) {
 		t.Errorf("Item should be in Collection but not.")
 	}
 
+	items, err := ds.ReadCollectionItems(c.IPNSAddress)
+	if err != nil {
+		t.Errorf("Unable to check if Item is in Collection. Error: %s", err)
+	}
+
+	if !funk.ContainsString(items, item.CID) {
+		t.Errorf("Item should be in Collection but not.")
+	}
+
 	// Remove Item From Collection
 	err = ds.RemoveItemFromCollection(item.CID, c.IPNSAddress)
 	if err != nil {
@@ -247,6 +256,25 @@ func TestDatastore(t *testing.T) {
 
 	if isIn == true {
 		t.Errorf("Item should not be in Collection but it is.")
+	}
+
+	item2 := &Item{
+		CID:  "Qmcpo2iLBikrdf1d6QU6vXuNb6P7hwrbNPW9kLAH8eG6dd",
+		Name: "Quick Start2",
+		Tags: []Tag{
+			Tag{"tag1a", "tag1b", "tag1c"},
+			Tag{"tag2a", "tag2b"},
+			tag3,
+		},
+	}
+	err = ds.CreateOrUpdateItem(item2)
+	if err != nil {
+		t.Errorf("Unable to create Item2. Error: %s", err)
+	}
+
+	err = ds.AddItemToCollection(item2.CID, c.IPNSAddress)
+	if err != nil {
+		t.Errorf("Unable to add Item2 to collection. Error: %s", err)
 	}
 
 	// Delete Item
