@@ -981,7 +981,7 @@ func (d *Datastore) GetParentPath(ipns, path string) (string, error) {
 		return parentPath, nil
 	}
 
-	// Read root folder
+	// Check root folder existence
 	rootExists, err := d.IsFolderExists(ipns, "")
 	if err != nil {
 		if err == ErrFolderNotExists {
@@ -1003,10 +1003,16 @@ func (d *Datastore) GetParentPath(ipns, path string) (string, error) {
 	return "", nil
 }
 
+// TODO: AddItemToFolder() RemoveItemFromFolder()
+
 // MoveOrCopyFolder moves or copies a folder to destination
 // func (d *Datastore) MoveOrCopyFolder(ipns, path, ipnsDst, pathDst string, copy bool) error {
 // 	if ipnsDst == "" {
 // 		ipnsDst = ipns
+// 	}
+
+// 	if path == "" {
+
 // 	}
 
 // 	folder, err := d.ReadFolder(ipns, path)
@@ -1016,8 +1022,8 @@ func (d *Datastore) GetParentPath(ipns, path string) (string, error) {
 
 // }
 
-// TODO: MoveFolder() CopyFolder()
-// TODO: DelFolder() AddItemToFolder() RemoveItemFromFolder()
+// TODO: MoveOrCopyItem()
+// TODO: DelFolder()
 
 // TODO: FilterItems() SearchItems()
 // func (d *Datastore) FilterItems(tags []Tag, ipns string) ([]string, error) {
