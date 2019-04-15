@@ -979,25 +979,29 @@ func (d *Datastore) AddItemToFolder(cid string, folder *Folder) error {
 		}
 
 		var items []string
+		var buf bytes.Buffer
 		if i != nil {
-			v, err := i.Value()
+			v, err := i.ValueCopy(nil)
 			if err != nil {
 				return err
 			}
 
-			items = append(items, string(v))
+			buf = *bytes.NewBuffer(v)
+
+			dec := gob.NewDecoder(&buf)
+			dec.Decode(&items)
+			buf.Reset()
 		}
 
-		var buf *bytes.Buffer
-		enc := gob.NewEncoder(buf)
+		items = append(items, cid)
+
+		enc := gob.NewEncoder(&buf)
 		err = enc.Encode(items)
 		if err != nil {
 			return err
 		}
 
 		txn.Set(k.Bytes(), buf.Bytes())
-
-		// TODO: Update folder count
 
 		return nil
 
@@ -1036,16 +1040,19 @@ func (d *Datastore) RemoveItemFromFolder(cid string, folder *Folder) error {
 		// Remove current folder from items
 		var cids []string
 		for _, v := range items {
-			if v.CID != cid {
-				cids = append(cids, v.CID)
+			if v != cid {
+				cids = append(cids, v)
 			}
 		}
 
 		// folder::[ipns]::[folderPath]::items
 		k = dbKey{"folder", folder.IPNSAddress, folder.Path, "items"}
-		var buf *bytes.Buffer
-		enc := gob.NewEncoder(buf)
-		enc.Encode(&cids)
+		var buf bytes.Buffer
+		enc := gob.NewEncoder(&buf)
+		err = enc.Encode(cids)
+		if err != nil {
+			return err
+		}
 
 		err = txn.Set(k.Bytes(), buf.Bytes())
 		if err != nil {
@@ -1090,7 +1097,7 @@ func (d *Datastore) IsItemInFolder(cid string, folder *Folder) (bool, error) {
 }
 
 // ReadFolderItems returns all items in a folder
-func (d *Datastore) ReadFolderItems(folder *Folder) ([]Item, error) {
+func (d *Datastore) ReadFolderItems(folder *Folder) ([]string, error) {
 	exists, err := d.IsFolderPathExists(folder.IPNSAddress, folder.Path)
 	if err != nil {
 		return nil, err
@@ -1099,7 +1106,7 @@ func (d *Datastore) ReadFolderItems(folder *Folder) ([]Item, error) {
 		return nil, ErrFolderNotExists
 	}
 
-	var items []Item
+	var items []string
 	err = d.db.View(func(txn *badger.Txn) error {
 		k := dbKey{"folder", folder.IPNSAddress, folder.Path, "items"}
 		i, err := txn.Get(k.Bytes())

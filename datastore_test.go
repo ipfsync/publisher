@@ -477,4 +477,87 @@ func TestFolders(t *testing.T) {
 	if !funk.ContainsString(children, "folder1/folder2/folder4") {
 		t.Error("folder4 should be in folder2's children")
 	}
+
+	// TODO: Test folder update
+
+	item1 := &Item{
+		CID:  "Qmcpo2iLBikrdf1d6QU6vXuNb6P7hwrbNPW9kLAH8eG67a",
+		Name: "Item1 for folder",
+	}
+	err = ds.CreateOrUpdateItem(item1)
+	if err != nil {
+		t.Errorf("Unable to create Item. Error: %s", err)
+	}
+
+	item2 := &Item{
+		CID:  "Qmcpo2iLBikrdf1d6QU6vXuNb6P7hwrbNPW9kLAH8eG67b",
+		Name: "Item2 for folder",
+	}
+	err = ds.CreateOrUpdateItem(item2)
+	if err != nil {
+		t.Errorf("Unable to create Item. Error: %s", err)
+	}
+
+	item3 := &Item{
+		CID:  "Qmcpo2iLBikrdf1d6QU6vXuNb6P7hwrbNPW9kLAH8eG67c",
+		Name: "Item3 for folder",
+	}
+	err = ds.CreateOrUpdateItem(item3)
+	if err != nil {
+		t.Errorf("Unable to create Item. Error: %s", err)
+	}
+
+	err = ds.AddItemToFolder(item1.CID, folder1Actual)
+	if err != nil {
+		t.Errorf("Unable to add item1 to folder1. Error: %s", err)
+	}
+
+	err = ds.AddItemToFolder(item2.CID, folder1Actual)
+	if err != nil {
+		t.Errorf("Unable to add item2 to folder1. Error: %s", err)
+	}
+
+	err = ds.AddItemToFolder(item3.CID, folder1Actual)
+	if err != nil {
+		t.Errorf("Unable to add item3 to folder1. Error: %s", err)
+	}
+
+	folderItems, err := ds.ReadFolderItems(folder1Actual)
+	if err != nil {
+		t.Errorf("Unable to read folder1 items. Error: %s", err)
+	}
+
+	if !funk.ContainsString(folderItems, item1.CID) {
+		t.Errorf("folder1 should contain item1 but not.")
+	}
+
+	if !funk.ContainsString(folderItems, item2.CID) {
+		t.Errorf("folder1 should contain item2 but not.")
+	}
+
+	if !funk.ContainsString(folderItems, item3.CID) {
+		t.Errorf("folder1 should contain item3 but not.")
+	}
+
+	err = ds.RemoveItemFromFolder(item3.CID, folder1Actual)
+	if err != nil {
+		t.Errorf("Unable to remove item3 from folder1. Error: %s", err)
+	}
+
+	folderItems, err = ds.ReadFolderItems(folder1Actual)
+	if err != nil {
+		t.Errorf("Unable to read folder1 items. Error: %s", err)
+	}
+
+	if funk.ContainsString(folderItems, item3.CID) {
+		t.Errorf("folder1 should not contain item3.")
+	}
+
+	isIn, err := ds.IsItemInFolder(item2.CID, folder1Actual)
+	if err != nil {
+		t.Errorf("Unable to check if item2 is in folder1. Error: %s", err)
+	}
+	if !isIn {
+		t.Errorf("folder1 should not contain item2.")
+	}
 }
