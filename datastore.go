@@ -71,7 +71,7 @@ func (k dbKey) IsEmpty() bool {
 // collection_item::[ipns]::[cid] = [cid]
 // folders::[ipns]::[folderPath] = [folderPath] # The folderPath of root folder is ""
 // folder::[ipns]::[folderPath]::children = [listOfChildFolderNames]
-// folder::[ipns]::[folderPath]::items = [listOfItemsFolderContains]
+// folder_item::[ipns]::[folderPath]::[cid] = [cid]
 // items::[cid] = [cid]
 // item::[cid]::name
 // item_collection::[cid]::[ipns] = [ipns]
@@ -965,43 +965,19 @@ func (d *Datastore) AddItemToFolder(cid string, folder *Folder) error {
 	}
 
 	err = d.db.Update(func(txn *badger.Txn) error {
+		// item_folder::[cid]::[ipns]::[folderPath] = [folderPath]
 		k := dbKey{"item_folder", cid, folder.IPNSAddress, folder.Path}
 		err := txn.Set(k.Bytes(), []byte(folder.Path))
 		if err != nil {
 			return err
 		}
 
-		// Add item to folder::[ipns]::[folderPath]::items
-		k = dbKey{"folder", folder.IPNSAddress, folder.Path, "items"}
-		i, err := txn.Get(k.Bytes())
-		if err != nil && err != badger.ErrKeyNotFound {
-			return err
-		}
-
-		var items []string
-		var buf bytes.Buffer
-		if i != nil {
-			v, err := i.ValueCopy(nil)
-			if err != nil {
-				return err
-			}
-
-			buf = *bytes.NewBuffer(v)
-
-			dec := gob.NewDecoder(&buf)
-			dec.Decode(&items)
-			buf.Reset()
-		}
-
-		items = append(items, cid)
-
-		enc := gob.NewEncoder(&buf)
-		err = enc.Encode(items)
+		// folder_item::[ipns]::[folderPath]::[cid] = [cid]
+		k = dbKey{"folder_item", folder.IPNSAddress, folder.Path, cid}
+		err = txn.Set(k.Bytes(), []byte(cid))
 		if err != nil {
 			return err
 		}
-
-		txn.Set(k.Bytes(), buf.Bytes())
 
 		return nil
 
@@ -1017,12 +993,8 @@ func (d *Datastore) RemoveItemFromFolder(cid string, folder *Folder) error {
 		return err
 	}
 
-	items, err := d.ReadFolderItems(folder)
-	if err != nil {
-		return err
-	}
-
 	err = d.db.Update(func(txn *badger.Txn) error {
+		// item_folder::[cid]::[ipns]::[folderPath] = [folderPath]
 		k := dbKey{"item_folder", cid, folder.IPNSAddress, folder.Path}
 		_, err := txn.Get(k.Bytes())
 		if err != nil {
@@ -1037,24 +1009,9 @@ func (d *Datastore) RemoveItemFromFolder(cid string, folder *Folder) error {
 			return err
 		}
 
-		// Remove current folder from items
-		var cids []string
-		for _, v := range items {
-			if v != cid {
-				cids = append(cids, v)
-			}
-		}
-
-		// folder::[ipns]::[folderPath]::items
-		k = dbKey{"folder", folder.IPNSAddress, folder.Path, "items"}
-		var buf bytes.Buffer
-		enc := gob.NewEncoder(&buf)
-		err = enc.Encode(cids)
-		if err != nil {
-			return err
-		}
-
-		err = txn.Set(k.Bytes(), buf.Bytes())
+		// folder_item::[ipns]::[folderPath]::[cid] = [cid]
+		k = dbKey{"folder_item", folder.IPNSAddress, folder.Path, cid}
+		err = txn.Delete(k.Bytes())
 		if err != nil {
 			return err
 		}
@@ -1108,24 +1065,18 @@ func (d *Datastore) ReadFolderItems(folder *Folder) ([]string, error) {
 
 	var items []string
 	err = d.db.View(func(txn *badger.Txn) error {
-		k := dbKey{"folder", folder.IPNSAddress, folder.Path, "items"}
-		i, err := txn.Get(k.Bytes())
-		if err != nil && err != badger.ErrKeyNotFound {
-			return err
-		}
+		p := dbKey{"folder_item", folder.IPNSAddress, folder.Path}
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
 
-		if i != nil {
-			v, err := i.Value()
-			if err != nil {
-				return err
-			}
+		for it.Seek(p.Bytes()); it.ValidForPrefix(p.Bytes()); it.Next() {
+			item := it.Item()
+			keyStr := string(item.Key())
+			key := newDbKeyFromStr(keyStr)
 
-			buf := bytes.NewBuffer(v)
-			dec := gob.NewDecoder(buf)
-			err = dec.Decode(&items)
-			if err != nil {
-				return err
-			}
+			items = append(items, key[3])
 		}
 
 		return nil
