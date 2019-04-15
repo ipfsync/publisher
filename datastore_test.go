@@ -394,7 +394,6 @@ func TestFolders(t *testing.T) {
 		t.Errorf("Unable to create Collection. Error: %s", err)
 	}
 
-	// Root folder
 	folder1 := &Folder{Path: "folder1", IPNSAddress: ipns}
 	err = ds.CreateFolder(folder1)
 	if err != nil {
@@ -408,6 +407,18 @@ func TestFolders(t *testing.T) {
 
 	if folder1Actual.Path != folder1.Path {
 		t.Errorf("Actual folder1 is not wanted")
+	}
+
+	// Root folder
+	rootActual, err := ds.ReadFolder(ipns, "")
+	if err != nil {
+		t.Errorf("Unable to read Root folder. Error: %s", err)
+	}
+	if rootActual.Path != "" {
+		t.Errorf("Actual Root folder's path is not wanted")
+	}
+	if !funk.ContainsString(rootActual.Children, "folder1") {
+		t.Error("folder1 should be in root folder's children")
 	}
 
 	// Test parent/child folder
