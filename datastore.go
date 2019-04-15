@@ -474,7 +474,9 @@ func (d *Datastore) DelItem(cid string) error {
 
 		p = dbKey{"item_tag", item.CID}
 		err = d.dropPrefix(txn, p)
-		return err
+		if err != nil {
+			return err
+		}
 
 		p = dbKey{"item_folder", item.CID}
 		err = d.dropPrefix(txn, p)
@@ -1232,6 +1234,11 @@ func (d *Datastore) ReadFolderChildren(folder *Folder) ([]string, error) {
 	return children, err
 }
 
+// TODO: DelFolder()
+// func (d *Datastore) DelFolder(folder *Folder) {
+
+// }
+
 // MoveOrCopyFolder moves or copies a folder to destination
 // func (d *Datastore) MoveOrCopyFolder(ipns, path, ipnsDst, pathDst string, copy bool) error {
 // 	if ipnsDst == "" {
@@ -1250,7 +1257,6 @@ func (d *Datastore) ReadFolderChildren(folder *Folder) ([]string, error) {
 // }
 
 // TODO: MoveOrCopyItem()
-// TODO: DelFolder()
 
 // TODO: FilterItems() SearchItems()
 // func (d *Datastore) FilterItems(tags []Tag, ipns string) ([]string, error) {
