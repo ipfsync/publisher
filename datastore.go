@@ -617,6 +617,8 @@ func (d *Datastore) AddItemToCollection(cid string, ipns string) error {
 		return err
 	}
 
+	// TODO: Check if the item is already in the collection
+
 	err = d.db.Update(func(txn *badger.Txn) error {
 		kColl := dbKey{"collection_item", ipns, cid}
 		err := txn.Set(kColl.Bytes(), []byte(cid))
@@ -629,6 +631,8 @@ func (d *Datastore) AddItemToCollection(cid string, ipns string) error {
 		if err != nil {
 			return err
 		}
+
+		// TODO: Add item to root folder
 
 		return nil
 	})
@@ -659,6 +663,8 @@ func (d *Datastore) RemoveItemFromCollection(cid string, ipns string) error {
 		if err != nil {
 			return err
 		}
+
+		// TODO: Remove item from folder
 
 		return nil
 	})
