@@ -1003,7 +1003,171 @@ func (d *Datastore) GetParentPath(ipns, path string) (string, error) {
 	return "", nil
 }
 
-// TODO: AddItemToFolder() RemoveItemFromFolder()
+// AddItemToFolder adds an item to a folder
+func (d *Datastore) AddItemToFolder(cid, ipns, path string) error {
+	err := d.checkCID(cid)
+	if err != nil {
+		return err
+	}
+
+	exists, err := d.IsFolderExists(ipns, path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrFolderNotExists
+	}
+
+	err = d.db.Update(func(txn *badger.Txn) error {
+		k := dbKey{"item_folder", cid, ipns, path}
+		err := txn.Set(k.Bytes(), []byte(path))
+		if err != nil {
+			return err
+		}
+
+		// Add item to folder::[ipns]::[folderPath]::items
+		k = dbKey{"folder", ipns, path, "items"}
+		i, err := txn.Get(k.Bytes())
+		if err != nil && err != badger.ErrKeyNotFound {
+			return err
+		}
+
+		var items []string
+		if i != nil {
+			v, err := i.Value()
+			if err != nil {
+				return err
+			}
+
+			items = append(items, string(v))
+		}
+
+		var buf *bytes.Buffer
+		enc := gob.NewEncoder(buf)
+		err = enc.Encode(items)
+		if err != nil {
+			return err
+		}
+
+		txn.Set(k.Bytes(), buf.Bytes())
+
+		// TODO: Update folder count
+
+		return nil
+
+	})
+
+	return err
+}
+
+// TODO: RemoveItemFromFolder()
+
+// IsItemInFolder checks if an item is in a folder
+func (d *Datastore) IsItemInFolder(cid, ipns, path string) (bool, error) {
+	err := d.checkCID(cid)
+	if err != nil {
+		return false, err
+	}
+
+	exists, err := d.IsFolderExists(ipns, path)
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, ErrFolderNotExists
+	}
+
+	var inFolder bool
+	err = d.db.View(func(txn *badger.Txn) error {
+		k := dbKey{"item_folder", cid, ipns, path}
+		_, err := txn.Get(k.Bytes())
+
+		if err == nil {
+			inFolder = true
+		} else if err == badger.ErrKeyNotFound {
+			err = nil
+		}
+		return err
+	})
+
+	return inFolder, err
+}
+
+// ReadFolderItems returns all items in a folder
+func (d *Datastore) ReadFolderItems(ipns, path string) ([]Item, error) {
+	exists, err := d.IsFolderExists(ipns, path)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, ErrFolderNotExists
+	}
+
+	var items []Item
+	err = d.db.View(func(txn *badger.Txn) error {
+		k := dbKey{"folder", ipns, path, "items"}
+		i, err := txn.Get(k.Bytes())
+		if err != nil && err != badger.ErrKeyNotFound {
+			return err
+		}
+
+		if i != nil {
+			v, err := i.Value()
+			if err != nil {
+				return err
+			}
+
+			buf := bytes.NewBuffer(v)
+			dec := gob.NewDecoder(buf)
+			err = dec.Decode(&items)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	return items, err
+}
+
+// ReadFolderChildren returns all children (sub-folders) in a folder
+func (d *Datastore) ReadFolderChildren(ipns, path string) ([]Folder, error) {
+	exists, err := d.IsFolderExists(ipns, path)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, ErrFolderNotExists
+	}
+
+	var children []Folder
+	err = d.db.View(func(txn *badger.Txn) error {
+		k := dbKey{"folder", ipns, path, "children"}
+		i, err := txn.Get(k.Bytes())
+		if err != nil && err != badger.ErrKeyNotFound {
+			return err
+		}
+
+		if i != nil {
+			v, err := i.Value()
+			if err != nil {
+				return err
+			}
+
+			buf := bytes.NewBuffer(v)
+			dec := gob.NewDecoder(buf)
+			err = dec.Decode(&children)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	return children, err
+}
 
 // MoveOrCopyFolder moves or copies a folder to destination
 // func (d *Datastore) MoveOrCopyFolder(ipns, path, ipnsDst, pathDst string, copy bool) error {
