@@ -10,6 +10,7 @@ import (
 	"encoding/gob"
 
 	"github.com/dgraph-io/badger"
+	"github.com/thoas/go-funk"
 )
 
 var (
@@ -27,6 +28,9 @@ var (
 
 	// ErrParentFolderNotExists is returned when parent folder doesn't exist.
 	ErrParentFolderNotExists = errors.New("Parent folder doesn't exist")
+
+	// ErrItemNotInFolder is returned when the item is not in the folder.
+	ErrItemNotInFolder = errors.New("Item is not in the folder")
 )
 
 const dbKeySep string = "::"
@@ -1060,7 +1064,57 @@ func (d *Datastore) AddItemToFolder(cid, ipns, path string) error {
 	return err
 }
 
-// TODO: RemoveItemFromFolder()
+// RemoveItemFromFolder removes item from a folder
+func (d *Datastore) RemoveItemFromFolder(cid, ipns, path string) error {
+	err := d.checkCID(cid)
+	if err != nil {
+		return err
+	}
+
+	items, err := d.ReadFolderItems(ipns, path)
+	if err != nil {
+		return err
+	}
+
+	err = d.db.Update(func(txn *badger.Txn) error {
+		k := dbKey{"item_folder", cid, ipns, path}
+		_, err := txn.Get(k.Bytes())
+		if err != nil {
+			if err == badger.ErrKeyNotFound {
+				return ErrItemNotInFolder
+			}
+			return err
+		}
+
+		err = txn.Delete(k.Bytes())
+		if err != nil {
+			return err
+		}
+
+		// Remove current folder from items
+		var cids []string
+		for _, v := range items {
+			if v.CID != cid {
+				cids = append(cids, v.CID)
+			}
+		}
+
+		// folder::[ipns]::[folderPath]::items
+		k = dbKey{"folder", ipns, path, "items"}
+		var buf *bytes.Buffer
+		enc := gob.NewEncoder(buf)
+		enc.Encode(&cids)
+
+		err = txn.Set(k.Bytes(), buf.Bytes())
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	return err
+}
 
 // IsItemInFolder checks if an item is in a folder
 func (d *Datastore) IsItemInFolder(cid, ipns, path string) (bool, error) {
