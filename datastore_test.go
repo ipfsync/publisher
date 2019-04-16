@@ -495,7 +495,7 @@ func TestFolders(t *testing.T) {
 
 	folder2Actual, err := ds.ReadFolder(ipns, "folder1/folder2")
 	if err != nil {
-		t.Errorf("Unable to create folder2. Error: %s", err)
+		t.Errorf("Unable to read folder2. Error: %s", err)
 	}
 
 	children, err = ds.ReadFolderChildren(folder2Actual)
@@ -587,5 +587,37 @@ func TestFolders(t *testing.T) {
 	}
 	if !isIn {
 		t.Errorf("folder1 should not contain item2.")
+	}
+
+	err = ds.DelFolder(folder1Actual)
+	if err != nil {
+		t.Errorf("Unable to delete folder1. Error: %s", err)
+	}
+
+	folderExists, err := ds.IsFolderPathExists(ipns, "folder1/folder2")
+	if err != nil {
+		t.Errorf("Unable to check if folder2 exists. Error: %s", err)
+	}
+
+	if folderExists {
+		t.Errorf("Folder2 should be deleted but not.")
+	}
+
+	folderExists, err = ds.IsFolderPathExists(ipns, "folder1/folder2/folder4")
+	if err != nil {
+		t.Errorf("Unable to check if folder4 exists. Error: %s", err)
+	}
+
+	if folderExists {
+		t.Errorf("Folder4 should be deleted but not.")
+	}
+
+	inCollection, err := ds.IsItemInCollection(item1.CID, c.IPNSAddress)
+	if err != nil {
+		t.Errorf("Unable to check if item1 is in collection. Error: %s", err)
+	}
+
+	if inCollection {
+		t.Errorf("Item1 should not be in collection.")
 	}
 }

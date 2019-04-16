@@ -33,6 +33,9 @@ var (
 
 	// ErrItemInCollection is returned when the item is already in the collection.
 	ErrItemInCollection = errors.New("Item is already in the collection")
+
+	// ErrCantDelRootFolder is returned when trying to delete a root folder.
+	ErrCantDelRootFolder = errors.New("Root folder can't be deleted")
 )
 
 const dbKeySep string = "::"
@@ -705,55 +708,59 @@ func (d *Datastore) RemoveItemFromCollection(cid string, ipns string) error {
 	}
 
 	err = d.db.Update(func(txn *badger.Txn) error {
-		// Remove item from folders of collection
-		var paths []string
-		p := dbKey{"item_folder", cid, ipns}
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchValues = false
-		it := txn.NewIterator(opts)
-
-		for it.Seek(p.Bytes()); it.ValidForPrefix(p.Bytes()); it.Next() {
-			item := it.Item()
-			keyStr := string(item.Key())
-			key := newDbKeyFromStr(keyStr)
-
-			paths = append(paths, key[3])
-		}
-		it.Close()
-
-		// drop item_folder::[cid]::[ipns]::[folderPath] = [folderPath]
-		err := d.dropPrefix(txn, p)
-		if err != nil {
-			return err
-		}
-
-		var k dbKey
-
-		// folder_item::[ipns]::[folderPath]::[cid] = [cid]
-		for _, v := range paths {
-			k = dbKey{"folder_item", ipns, v, cid}
-			err = txn.Delete(k.Bytes())
-			if err != nil {
-				return err
-			}
-		}
-
-		k = dbKey{"collection_item", ipns, cid}
-		err = txn.Delete(k.Bytes())
-		if err != nil {
-			return err
-		}
-
-		k = dbKey{"item_collection", cid, ipns}
-		err = txn.Delete(k.Bytes())
-		if err != nil {
-			return err
-		}
-
-		return nil
+		return d.removeItemFromCollectionInTxn(txn, cid, ipns)
 	})
 	return err
 
+}
+
+func (d *Datastore) removeItemFromCollectionInTxn(txn *badger.Txn, cid string, ipns string) error {
+	// Remove item from folders of collection
+	var paths []string
+	p := dbKey{"item_folder", cid, ipns}
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+	it := txn.NewIterator(opts)
+
+	for it.Seek(p.Bytes()); it.ValidForPrefix(p.Bytes()); it.Next() {
+		item := it.Item()
+		keyStr := string(item.Key())
+		key := newDbKeyFromStr(keyStr)
+
+		paths = append(paths, key[3])
+	}
+	it.Close()
+
+	// drop item_folder::[cid]::[ipns]::[folderPath] = [folderPath]
+	err := d.dropPrefix(txn, p)
+	if err != nil {
+		return err
+	}
+
+	var k dbKey
+
+	// folder_item::[ipns]::[folderPath]::[cid] = [cid]
+	for _, v := range paths {
+		k = dbKey{"folder_item", ipns, v, cid}
+		err = txn.Delete(k.Bytes())
+		if err != nil {
+			return err
+		}
+	}
+
+	k = dbKey{"collection_item", ipns, cid}
+	err = txn.Delete(k.Bytes())
+	if err != nil {
+		return err
+	}
+
+	k = dbKey{"item_collection", cid, ipns}
+	err = txn.Delete(k.Bytes())
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // IsItemInCollection checks if an Item belongs to a Collection.
@@ -934,7 +941,10 @@ func (d *Datastore) CreateOrUpdateFolder(folder *Folder) error {
 				return err
 			}
 
-			txn.Set(pck.Bytes(), buf.Bytes())
+			err = txn.Set(pck.Bytes(), buf.Bytes())
+			if err != nil {
+				return err
+			}
 		}
 
 		return nil
@@ -1234,10 +1244,156 @@ func (d *Datastore) ReadFolderChildren(folder *Folder) ([]string, error) {
 	return children, err
 }
 
-// TODO: DelFolder()
-// func (d *Datastore) DelFolder(folder *Folder) {
+// DelFolder deletes a folder and all its children folders. It also remove relationships with items.
+// Items won't be deleted. If an item doesn't belong to any folder of the collection, it will be removed from the collection.
+func (d *Datastore) DelFolder(folder *Folder) error {
+	if folder.Path == "" {
+		return ErrCantDelRootFolder
+	}
 
-// }
+	exists, err := d.IsFolderPathExists(folder.IPNSAddress, folder.Path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrFolderNotExists
+	}
+
+	err = d.db.Update(func(txn *badger.Txn) error {
+
+		// Delete folder itself
+		err := d.delFolderInTxn(txn, folder)
+		if err != nil {
+			return err
+		}
+
+		// Remove folder from parent's children list
+		pck := dbKey{"folder", folder.IPNSAddress, folder.ParentPath(), "children"}
+		item, err := txn.Get(pck.Bytes())
+		if err != nil && err != badger.ErrKeyNotFound {
+			return err
+		}
+		if item != nil {
+			var pChildren []string
+			var buf bytes.Buffer
+			v, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			// Read children
+			buf = *bytes.NewBuffer(v)
+			dec := gob.NewDecoder(&buf)
+			err = dec.Decode(&pChildren)
+			if err != nil {
+				return err
+			}
+
+			// Remove folder from children
+			j := 0
+			for _, child := range pChildren {
+				if child != folder.Path {
+					pChildren[j] = child
+					j++
+				}
+			}
+			pChildren = pChildren[:j]
+
+			// Save back
+			buf.Reset()
+			enc := gob.NewEncoder(&buf)
+			err = enc.Encode(pChildren)
+			if err != nil {
+				return err
+			}
+
+			err = txn.Set(pck.Bytes(), buf.Bytes())
+			if err != nil {
+				return err
+			}
+
+		}
+
+		return nil
+	})
+
+	return err
+}
+
+func (d *Datastore) delFolderInTxn(txn *badger.Txn, folder *Folder) error {
+
+	children, err := d.ReadFolderChildren(folder)
+	if err != nil {
+		return err
+	}
+	// Recursively delete children folder
+	for _, child := range children {
+		err := d.delFolderInTxn(txn, &Folder{IPNSAddress: folder.IPNSAddress, Path: child})
+		if err != nil {
+			return err
+		}
+	}
+
+	items, err := d.ReadFolderItems(folder)
+	if err != nil {
+		return err
+	}
+
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+
+	// item_folder::[cid]::[ipns]::[folderPath]
+	for _, cid := range items {
+		k := dbKey{"item_folder", cid, folder.IPNSAddress, folder.Path}
+		err := txn.Delete(k.Bytes())
+		if err != nil {
+			return err
+		}
+
+		// Check if the item belongs to any other folders of the collection.
+		// If not, remove it from collection.
+		p := dbKey{"item_folder", cid, folder.IPNSAddress}
+		it := txn.NewIterator(opts)
+
+		inFolder := false
+		for it.Seek(p.Bytes()); it.ValidForPrefix(p.Bytes()); it.Next() {
+			inFolder = true
+			break
+		}
+		it.Close()
+
+		if !inFolder {
+			err = d.removeItemFromCollectionInTxn(txn, cid, folder.IPNSAddress)
+			if err != nil {
+				it.Close()
+				return err
+			}
+		}
+	}
+
+	// folder_item::[ipns]::[folderPath]::[cid]
+	p := dbKey{"folder_item", folder.IPNSAddress, folder.Path}
+	err = d.dropPrefix(txn, p)
+	if err != nil {
+		return err
+	}
+
+	// folder::[ipns]::[folderPath]
+	p = dbKey{"folder", folder.IPNSAddress, folder.Path}
+	err = d.dropPrefix(txn, p)
+	if err != nil {
+		return err
+	}
+
+	// folders::[ipns]::[folderPath]
+	k := dbKey{"folders", folder.IPNSAddress, folder.Path}
+	err = txn.Delete(k.Bytes())
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}
 
 // MoveOrCopyFolder moves or copies a folder to destination
 // func (d *Datastore) MoveOrCopyFolder(ipns, path, ipnsDst, pathDst string, copy bool) error {
