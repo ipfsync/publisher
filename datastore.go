@@ -1321,6 +1321,15 @@ func (d *Datastore) DelFolder(folder *Folder) error {
 
 func (d *Datastore) delFolderInTxn(txn *badger.Txn, folder *Folder) error {
 
+	exists, err := d.IsFolderPathExists(folder.IPNSAddress, folder.Path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		// Just skip if folder isn't exist
+		return nil
+	}
+
 	children, err := d.ReadFolderChildren(folder)
 	if err != nil {
 		return err
@@ -1395,6 +1404,65 @@ func (d *Datastore) delFolderInTxn(txn *badger.Txn, folder *Folder) error {
 
 }
 
+// TODO: MoveOrCopyItem()
+func (d *Datastore) MoveOrCopyItem(cid string, folderFrom, folderTo *Folder, copy bool) error {
+	err := d.checkCID(cid)
+	if err != nil {
+		return err
+	}
+
+	exists, err := d.IsItemInFolder(cid, folderFrom)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrItemNotInFolder
+	}
+
+	exists, err = d.IsFolderPathExists(folderTo.IPNSAddress, folderTo.Path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrFolderNotExists
+	}
+
+	return nil
+}
+
+func (d *Datastore) moveOrCopyItemInTxn(txn *badger.Txn, cid string, folderFrom, folderTo *Folder, copy bool) error {
+	err := d.checkCID(cid)
+	if err != nil {
+		return err
+	}
+
+	exists, err := d.IsItemInFolder(cid, folderFrom)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		// Just skip if folder isn't exist
+		return nil
+	}
+
+	exists, err = d.IsFolderPathExists(folderTo.IPNSAddress, folderTo.Path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		// Just skip if folder isn't exist
+		return nil
+	}
+
+	// Read folder_item::[ipns]::[folderPath]::[cid]
+	k := dbKey{"folder_item", folder.IPNSAddress, folder.Path, cid}
+	item, err := txn.Get(k.Bytes())
+	if err != nil {
+		return err
+	}
+
+}
+
 // MoveOrCopyFolder moves or copies a folder to destination
 // func (d *Datastore) MoveOrCopyFolder(ipns, path, ipnsDst, pathDst string, copy bool) error {
 // 	if ipnsDst == "" {
@@ -1411,8 +1479,6 @@ func (d *Datastore) delFolderInTxn(txn *badger.Txn, folder *Folder) error {
 // 	}
 
 // }
-
-// TODO: MoveOrCopyItem()
 
 // TODO: FilterItems() SearchItems()
 // func (d *Datastore) FilterItems(tags []Tag, ipns string) ([]string, error) {
