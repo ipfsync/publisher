@@ -1404,7 +1404,7 @@ func (d *Datastore) delFolderInTxn(txn *badger.Txn, folder *Folder) error {
 
 }
 
-// TODO: MoveOrCopyItem()
+// MoveOrCopyItem moves or copies an item from a folder to another folder
 func (d *Datastore) MoveOrCopyItem(cid string, folderFrom, folderTo *Folder, copy bool) error {
 	err := d.checkCID(cid)
 	if err != nil {
@@ -1426,6 +1426,10 @@ func (d *Datastore) MoveOrCopyItem(cid string, folderFrom, folderTo *Folder, cop
 	if !exists {
 		return ErrFolderNotExists
 	}
+
+	err = d.db.Update(func(txn *badger.Txn) error {
+		return d.moveOrCopyItemInTxn(txn, cid, folderFrom, folderTo, copy)
+	})
 
 	return nil
 }
@@ -1454,13 +1458,70 @@ func (d *Datastore) moveOrCopyItemInTxn(txn *badger.Txn, cid string, folderFrom,
 		return nil
 	}
 
-	// Read folder_item::[ipns]::[folderPath]::[cid]
-	k := dbKey{"folder_item", folder.IPNSAddress, folder.Path, cid}
-	item, err := txn.Get(k.Bytes())
+	// Copy folder_item::[ipns]::[folderPath]::[cid]
+	k := dbKey{"folder_item", folderTo.IPNSAddress, folderTo.Path, cid}
+	err = txn.Set(k.Bytes(), []byte(cid))
 	if err != nil {
 		return err
 	}
 
+	if !copy {
+		k = dbKey{"folder_item", folderFrom.IPNSAddress, folderFrom.Path, cid}
+		err = txn.Delete(k.Bytes())
+		if err != nil {
+			return err
+		}
+	}
+
+	// Copy item_folder::[cid]::[ipns]::[folderPath]
+	k = dbKey{"item_folder", cid, folderTo.IPNSAddress, folderTo.Path}
+	err = txn.Set(k.Bytes(), []byte(folderTo.Path))
+	if err != nil {
+		return err
+	}
+
+	if !copy {
+		k = dbKey{"item_folder", cid, folderFrom.IPNSAddress, folderFrom.Path, cid}
+		err = txn.Delete(k.Bytes())
+		if err != nil {
+			return err
+		}
+	}
+
+	if folderFrom.IPNSAddress != folderTo.IPNSAddress {
+		// Different collection. Add item to the To collection
+		// collection_item::[ipns]::[cid]
+		k = dbKey{"collection_item", folderTo.IPNSAddress, cid}
+		err = txn.Set(k.Bytes(), []byte(cid))
+		if err != nil {
+			return err
+		}
+		// item_collection::[cid]::[ipns]
+		k = dbKey{"item_collection", cid, folderTo.IPNSAddress}
+		err = txn.Set(k.Bytes(), []byte(folderTo.IPNSAddress))
+		if err != nil {
+			return err
+		}
+
+		if !copy {
+			// Remove item from old collection
+
+			// collection_item::[ipns]::[cid]
+			k = dbKey{"collection_item", folderFrom.IPNSAddress, cid}
+			err = txn.Delete(k.Bytes())
+			if err != nil {
+				return err
+			}
+			// item_collection::[cid]::[ipns]
+			k = dbKey{"item_collection", cid, folderFrom.IPNSAddress}
+			err = txn.Delete(k.Bytes())
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // MoveOrCopyFolder moves or copies a folder to destination
