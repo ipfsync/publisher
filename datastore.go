@@ -976,6 +976,22 @@ func (d *Datastore) ReadFolder(ipns, path string) (*Folder, error) {
 // IsFolderPathExists checkes if a folder exists.
 func (d *Datastore) IsFolderPathExists(ipns, path string) (bool, error) {
 
+	exists := false
+
+	err := d.db.View(func(txn *badger.Txn) error {
+		var err error
+		exists, err = d.isFolderPathExistsInTxn(txn, ipns, path)
+		return err
+	})
+
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func (d *Datastore) isFolderPathExistsInTxn(txn *badger.Txn, ipns, path string) (bool, error) {
+
 	err := d.checkIPNS(ipns)
 	if err != nil {
 		return false, err
@@ -983,24 +999,17 @@ func (d *Datastore) IsFolderPathExists(ipns, path string) (bool, error) {
 
 	exists := false
 
-	err = d.db.View(func(txn *badger.Txn) error {
-		k := dbKey{"folders", ipns, path}
+	k := dbKey{"folders", ipns, path}
 
-		_, err := txn.Get(k.Bytes())
-		if err != nil {
-			if err != badger.ErrKeyNotFound {
-				return err
-			}
-		} else {
-			exists = true
-		}
-
-		return nil
-	})
-
+	_, err = txn.Get(k.Bytes())
 	if err != nil {
-		return false, err
+		if err != badger.ErrKeyNotFound {
+			return false, err
+		}
+	} else {
+		exists = true
 	}
+
 	return exists, nil
 }
 
@@ -1010,7 +1019,7 @@ func (d *Datastore) assertParentInTxn(txn *badger.Txn, folder *Folder) error {
 
 	if folder.ParentPath() == "" {
 		// Check root folder existence
-		rootExists, err := d.IsFolderPathExists(folder.IPNSAddress, "")
+		rootExists, err := d.isFolderPathExistsInTxn(txn, folder.IPNSAddress, "")
 		if err != nil {
 			if err == ErrFolderNotExists {
 				rootExists = false
@@ -1029,7 +1038,7 @@ func (d *Datastore) assertParentInTxn(txn *badger.Txn, folder *Folder) error {
 		}
 
 	} else {
-		exists, err := d.IsFolderPathExists(folder.IPNSAddress, folder.ParentPath())
+		exists, err := d.isFolderPathExistsInTxn(txn, folder.IPNSAddress, folder.ParentPath())
 		if err != nil {
 			return err
 		}
@@ -1117,12 +1126,23 @@ func (d *Datastore) RemoveItemFromFolder(cid string, folder *Folder) error {
 
 // IsItemInFolder checks if an item is in a folder
 func (d *Datastore) IsItemInFolder(cid string, folder *Folder) (bool, error) {
+	var inFolder bool
+	err := d.db.View(func(txn *badger.Txn) error {
+		var err error
+		inFolder, err = d.isItemInFolderInTxn(txn, cid, folder)
+		return err
+	})
+
+	return inFolder, err
+}
+
+func (d *Datastore) isItemInFolderInTxn(txn *badger.Txn, cid string, folder *Folder) (bool, error) {
 	err := d.checkCID(cid)
 	if err != nil {
 		return false, err
 	}
 
-	exists, err := d.IsFolderPathExists(folder.IPNSAddress, folder.Path)
+	exists, err := d.isFolderPathExistsInTxn(txn, folder.IPNSAddress, folder.Path)
 	if err != nil {
 		return false, err
 	}
@@ -1131,17 +1151,14 @@ func (d *Datastore) IsItemInFolder(cid string, folder *Folder) (bool, error) {
 	}
 
 	var inFolder bool
-	err = d.db.View(func(txn *badger.Txn) error {
-		k := dbKey{"item_folder", cid, folder.IPNSAddress, folder.Path}
-		_, err := txn.Get(k.Bytes())
+	k := dbKey{"item_folder", cid, folder.IPNSAddress, folder.Path}
+	_, err = txn.Get(k.Bytes())
 
-		if err == nil {
-			inFolder = true
-		} else if err == badger.ErrKeyNotFound {
-			err = nil
-		}
-		return err
-	})
+	if err == nil {
+		inFolder = true
+	} else if err == badger.ErrKeyNotFound {
+		err = nil
+	}
 
 	return inFolder, err
 }
@@ -1441,7 +1458,7 @@ func (d *Datastore) moveOrCopyItemInTxn(txn *badger.Txn, cid string, folderFrom,
 		return err
 	}
 
-	exists, err := d.IsItemInFolder(cid, folderFrom)
+	exists, err := d.isItemInFolderInTxn(txn, cid, folderFrom)
 	if err != nil {
 		return err
 	}
@@ -1450,7 +1467,7 @@ func (d *Datastore) moveOrCopyItemInTxn(txn *badger.Txn, cid string, folderFrom,
 		return nil
 	}
 
-	exists, err = d.IsFolderPathExists(folderTo.IPNSAddress, folderTo.Path)
+	exists, err = d.isFolderPathExistsInTxn(txn, folderTo.IPNSAddress, folderTo.Path)
 	if err != nil {
 		return err
 	}
@@ -1536,23 +1553,30 @@ func (d *Datastore) MoveOrCopyFolder(folderFrom, folderTo *Folder, copy bool) er
 		return ErrFolderNotExists
 	}
 
-	return nil
-}
-
-func (d *Datastore) moveOrCopyFolderInTxn(txn *badger.Txn, folderFrom, folderTo *Folder, copy bool) error {
-
-	// Copy / move items in folder
-	cids, err := d.ReadFolderItems(folderFrom)
+	err = d.checkIPNS(folderTo.IPNSAddress)
 	if err != nil {
 		return err
 	}
 
-	for _, cid := range cids {
-		err := d.moveOrCopyItemInTxn(txn, cid, folderFrom, folderTo, copy)
+	err = d.db.Update(func(txn *badger.Txn) error {
+		return d.copyFolderInTxn(txn, folderFrom, folderTo)
+	})
+	if err != nil {
+		return err
+	}
+
+	if !copy {
+		// Moving folder. Delete from folder
+		err = d.DelFolder(folderFrom)
 		if err != nil {
 			return err
 		}
 	}
+
+	return nil
+}
+
+func (d *Datastore) copyFolderInTxn(txn *badger.Txn, folderFrom, folderTo *Folder) error {
 
 	// Copy / move folder
 	folderToExists, err := d.IsFolderPathExists(folderTo.IPNSAddress, folderTo.Path)
@@ -1567,6 +1591,31 @@ func (d *Datastore) moveOrCopyFolderInTxn(txn *badger.Txn, folderFrom, folderTo 
 		}
 	}
 
+	// Copy / move items in folder
+	cids, err := d.ReadFolderItems(folderFrom)
+	if err != nil {
+		return err
+	}
+
+	for _, cid := range cids {
+		err := d.moveOrCopyItemInTxn(txn, cid, folderFrom, folderTo, true)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Copy / move children folder
+	children, err := d.ReadFolderChildren(folderFrom)
+	for _, child := range children {
+		subFromFolder := &Folder{IPNSAddress: folderFrom.IPNSAddress, Path: child}
+		subToPath := folderTo.Path + "/" + subFromFolder.Basename()
+		subToFolder := &Folder{IPNSAddress: folderTo.IPNSAddress, Path: subToPath}
+
+		err := d.copyFolderInTxn(txn, subFromFolder, subToFolder)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

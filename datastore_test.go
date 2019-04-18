@@ -2,6 +2,7 @@ package resource
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -586,7 +587,32 @@ func TestFolders(t *testing.T) {
 		t.Errorf("Unable to check if item2 is in folder1. Error: %s", err)
 	}
 	if !isIn {
-		t.Errorf("folder1 should not contain item2.")
+		t.Errorf("folder1 should contain item2.")
+	}
+
+	// Test copy folder
+	err = ds.MoveOrCopyFolder(folder1Actual, &Folder{IPNSAddress: folder1Actual.IPNSAddress, Path: "folder1copy"}, true)
+	if err != nil {
+		t.Errorf("Unable to copy folder1 to folder1copy. Error: %s", err)
+	}
+
+	folder1CopyActual, err := ds.ReadFolder(ipns, "folder1copy")
+	if err != nil {
+		t.Errorf("Unable to read folder1copy. Error: %s", err)
+	}
+
+	_, err = ds.ReadFolder(ipns, "folder1copy/folder2")
+	if err != nil {
+		t.Errorf("Unable to read folder1copy/folder2. Error: %s", err)
+	}
+
+	isIn, err = ds.IsItemInFolder(item2.CID, folder1CopyActual)
+	if err != nil {
+		t.Errorf("Unable to check if item2 is in folder1copy. Error: %s", err)
+	}
+	if !isIn {
+		fmt.Println(ds.ReadFolderItems(folder1CopyActual))
+		t.Errorf("folder1copy should contain item2.")
 	}
 
 	err = ds.DelFolder(folder1Actual)
@@ -620,4 +646,5 @@ func TestFolders(t *testing.T) {
 	if inCollection {
 		t.Errorf("Item1 should not be in collection.")
 	}
+
 }
