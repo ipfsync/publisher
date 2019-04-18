@@ -14,7 +14,7 @@ import (
 
 var (
 	// ErrIPNSNotFound is returned when an IPNS is not found in Datastore.
-	ErrIPNSNotFound = errors.New("IPSN not found")
+	ErrIPNSNotFound = errors.New("IPNS not found")
 
 	// ErrCIDNotFound is returned when a CID is not found in Datastore.
 	ErrCIDNotFound = errors.New("CID not found")
@@ -173,12 +173,10 @@ func (d *Datastore) CreateOrUpdateCollection(c *Collection) error {
 		return nil
 	})
 
-	if err != nil {
-		return err
-	}
-
 	// Create root folder
-	err = d.assertParent(&Folder{IPNSAddress: c.IPNSAddress})
+	err = d.db.Update(func(txn *badger.Txn) error {
+		return d.assertParentInTxn(txn, &Folder{IPNSAddress: c.IPNSAddress})
+	})
 
 	return err
 }
@@ -882,6 +880,20 @@ func (d *Datastore) CreateOrUpdateFolder(folder *Folder) error {
 		return err
 	}
 
+	err = d.db.Update(func(txn *badger.Txn) error {
+		return d.createOrUpdateFolderInTxn(txn, folder)
+	})
+
+	return err
+}
+
+func (d *Datastore) createOrUpdateFolderInTxn(txn *badger.Txn, folder *Folder) error {
+	k := dbKey{"folders", folder.IPNSAddress, folder.Path}
+	err := txn.Set(k.Bytes(), []byte(folder.Path))
+	if err != nil {
+		return err
+	}
+
 	isRoot := false
 
 	parentPath := folder.ParentPath()
@@ -891,66 +903,54 @@ func (d *Datastore) CreateOrUpdateFolder(folder *Folder) error {
 
 	if !isRoot {
 		// Make sure parent exists
-		err = d.assertParent(folder)
+		err = d.assertParentInTxn(txn, folder)
+		if err != nil {
+			return err
+		}
+
+		// Add this folder to parent's children list
+		// Parent's Children key: folder::[ipns]::[folderPath]::children
+		pck := dbKey{"folder", folder.IPNSAddress, parentPath, "children"}
+		item, err := txn.Get(pck.Bytes())
+		var children []string
+		if err != nil && err != badger.ErrKeyNotFound {
+			return err
+		}
+
+		var buf bytes.Buffer
+		if item != nil {
+			v, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+
+			// Read children
+			buf = *bytes.NewBuffer(v)
+			dec := gob.NewDecoder(&buf)
+			err = dec.Decode(&children)
+			if err != nil {
+				return err
+			}
+		}
+
+		// Add folder to children
+		children = append(children, folder.Path)
+
+		// Save back
+		buf.Reset()
+		enc := gob.NewEncoder(&buf)
+		err = enc.Encode(children)
+		if err != nil {
+			return err
+		}
+
+		err = txn.Set(pck.Bytes(), buf.Bytes())
 		if err != nil {
 			return err
 		}
 	}
 
-	err = d.db.Update(func(txn *badger.Txn) error {
-		k := dbKey{"folders", folder.IPNSAddress, folder.Path}
-		err := txn.Set(k.Bytes(), []byte(folder.Path))
-		if err != nil {
-			return err
-		}
-
-		if !isRoot {
-			// Add this folder to parent's children list
-			// Parent's Children key: folder::[ipns]::[folderPath]::children
-			pck := dbKey{"folder", folder.IPNSAddress, parentPath, "children"}
-			item, err := txn.Get(pck.Bytes())
-			var children []string
-			if err != nil && err != badger.ErrKeyNotFound {
-				return err
-			}
-
-			var buf bytes.Buffer
-			if item != nil {
-				v, err := item.ValueCopy(nil)
-				if err != nil {
-					return err
-				}
-
-				// Read children
-				buf = *bytes.NewBuffer(v)
-				dec := gob.NewDecoder(&buf)
-				err = dec.Decode(&children)
-				if err != nil {
-					return err
-				}
-			}
-
-			// Add folder to children
-			children = append(children, folder.Path)
-
-			// Save back
-			buf.Reset()
-			enc := gob.NewEncoder(&buf)
-			err = enc.Encode(children)
-			if err != nil {
-				return err
-			}
-
-			err = txn.Set(pck.Bytes(), buf.Bytes())
-			if err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-
-	return err
+	return nil
 }
 
 // ReadFolder reads a folder from Datastore.
@@ -1005,7 +1005,7 @@ func (d *Datastore) IsFolderPathExists(ipns, path string) (bool, error) {
 
 // assertParent checks if parent of folder exists. If not, an error will be returned.
 // If parent is root, it will create the root folder.
-func (d *Datastore) assertParent(folder *Folder) error {
+func (d *Datastore) assertParentInTxn(txn *badger.Txn, folder *Folder) error {
 
 	if folder.ParentPath() == "" {
 		// Check root folder existence
@@ -1021,7 +1021,7 @@ func (d *Datastore) assertParent(folder *Folder) error {
 		// Create root folder if not exists in Datastore
 		if !rootExists {
 			root := &Folder{IPNSAddress: folder.IPNSAddress}
-			err = d.CreateOrUpdateFolder(root)
+			err = d.createOrUpdateFolderInTxn(txn, root)
 			if err != nil {
 				return err
 			}
@@ -1525,21 +1525,49 @@ func (d *Datastore) moveOrCopyItemInTxn(txn *badger.Txn, cid string, folderFrom,
 }
 
 // MoveOrCopyFolder moves or copies a folder to destination
-// func (d *Datastore) MoveOrCopyFolder(ipns, path, ipnsDst, pathDst string, copy bool) error {
-// 	if ipnsDst == "" {
-// 		ipnsDst = ipns
-// 	}
+func (d *Datastore) MoveOrCopyFolder(folderFrom, folderTo *Folder, copy bool) error {
 
-// 	if path == "" {
+	exists, err := d.IsFolderPathExists(folderFrom.IPNSAddress, folderFrom.Path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrFolderNotExists
+	}
 
-// 	}
+	return nil
+}
 
-// 	folder, err := d.ReadFolder(ipns, path)
-// 	if err != nil {
-// 		return err
-// 	}
+func (d *Datastore) moveOrCopyFolderInTxn(txn *badger.Txn, folderFrom, folderTo *Folder, copy bool) error {
 
-// }
+	// Copy / move items in folder
+	cids, err := d.ReadFolderItems(folderFrom)
+	if err != nil {
+		return err
+	}
+
+	for _, cid := range cids {
+		err := d.moveOrCopyItemInTxn(txn, cid, folderFrom, folderTo, copy)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Copy / move folder
+	folderToExists, err := d.IsFolderPathExists(folderTo.IPNSAddress, folderTo.Path)
+	if err != nil {
+		return err
+	}
+
+	if !folderToExists {
+		err = d.createOrUpdateFolderInTxn(txn, folderTo)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
 
 // TODO: FilterItems() SearchItems()
 // func (d *Datastore) FilterItems(tags []Tag, ipns string) ([]string, error) {

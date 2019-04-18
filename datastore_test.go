@@ -336,7 +336,7 @@ func TestSearchTags(t *testing.T) {
 	}
 
 	item = &Item{
-		CID:  "Qmcpo2iLBikrdf1d6QU6vXuNb6P7hwrbNPW9kLAH8eG672",
+		CID:  "Qmcpo2iLBikrdf1d6QU6vXuNb6P7hwrbNPW9kLAH8e3333",
 		Name: "Tag Search Item2",
 		Tags: []Tag{
 			tag400_1,
