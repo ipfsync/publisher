@@ -170,12 +170,13 @@ func (d *Datastore) CreateOrUpdateCollection(c *Collection) error {
 			return err
 		}
 
-		return nil
-	})
+		// Create root folder
+		err = d.createOrUpdateFolderInTxn(txn, &Folder{IPNSAddress: c.IPNSAddress})
+		if err != nil {
+			return err
+		}
 
-	// Create root folder
-	err = d.db.Update(func(txn *badger.Txn) error {
-		return d.assertParentInTxn(txn, &Folder{IPNSAddress: c.IPNSAddress})
+		return nil
 	})
 
 	return err
