@@ -34,7 +34,7 @@ func (f *Folder) ParentPath() string {
 	return parentPath
 }
 
-// ParentPath returns the last part of paths (base name)
+// Basename returns the last part of paths (base name)
 func (f *Folder) Basename() string {
 	parts := strings.Split(f.Path, "/")
 	return parts[len(parts)-1]
