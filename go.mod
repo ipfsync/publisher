@@ -7,6 +7,7 @@ require (
 	github.com/dgraph-io/badger v1.5.4
 	github.com/dgryski/go-farm v0.0.0-20190323231341-8198c7b169ec // indirect
 	github.com/golang/protobuf v1.3.1 // indirect
+	github.com/ipfsync/ipfsync v0.0.0-20190422095608-5552ef7ae17b // indirect
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/thoas/go-funk v0.4.0
