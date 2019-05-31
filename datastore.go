@@ -851,11 +851,13 @@ func (d *Datastore) ReadTagItemCount(tags []Tag) ([]uint, error) {
 					return err
 				}
 			} else {
-				v, err := item.Value()
+				err := item.Value(func(val []byte) error {
+					c = uint(binary.BigEndian.Uint32(val))
+					return nil
+				})
 				if err != nil {
 					return err
 				}
-				c = uint(binary.BigEndian.Uint32(v))
 			}
 			counts = append(counts, c)
 		}
@@ -1243,17 +1245,19 @@ func (d *Datastore) ReadFolderChildren(folder *Folder) ([]string, error) {
 		}
 
 		if i != nil {
-			v, err := i.Value()
+			err := i.Value(func(val []byte) error {
+				buf := bytes.NewBuffer(val)
+				dec := gob.NewDecoder(buf)
+				err = dec.Decode(&children)
+				if err != nil {
+					return err
+				}
+				return nil
+			})
 			if err != nil {
 				return err
 			}
 
-			buf := bytes.NewBuffer(v)
-			dec := gob.NewDecoder(buf)
-			err = dec.Decode(&children)
-			if err != nil {
-				return err
-			}
 		}
 
 		return nil
