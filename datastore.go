@@ -1623,6 +1623,32 @@ func (d *Datastore) copyFolderInTxn(txn *badger.Txn, folderFrom, folderTo *Folde
 	return nil
 }
 
+func (d *Datastore) IsCollectionEmpty(ipns string) (bool, error) {
+	err := d.checkIPNS(ipns)
+	if err != nil {
+		return true, err
+	}
+
+	empty := true
+	p := dbKey{"collection_item", ipns}
+	err = d.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		it.Seek(p.Bytes())
+
+		if it.ValidForPrefix(p.Bytes()) {
+			empty = false
+		}
+
+		return nil
+	})
+
+	return empty, err
+}
+
 // TODO: FilterItems() SearchItems()
 // func (d *Datastore) FilterItems(tags []Tag, ipns string) ([]string, error) {
 

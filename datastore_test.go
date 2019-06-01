@@ -53,6 +53,15 @@ func TestDatastore(t *testing.T) {
 		t.Errorf("Unable to create Collection. Error: %s", err)
 	}
 
+	// IsCollectionEmpty
+	empty, err := ds.IsCollectionEmpty(c.IPNSAddress)
+	if err != nil {
+		t.Errorf("Unable to check if Collection is empty. Error: %s", err)
+	}
+	if !empty {
+		t.Error("Collection is empty but false returns.")
+	}
+
 	cActual, err := ds.ReadCollection(c.IPNSAddress)
 	if err != nil {
 		t.Errorf("Unable to read Collection. Error: %s", err)
@@ -233,6 +242,15 @@ func TestDatastore(t *testing.T) {
 
 	if isIn == false {
 		t.Errorf("Item should be in Collection but not.")
+	}
+
+	// IsCollectionEmpty
+	empty, err = ds.IsCollectionEmpty(c.IPNSAddress)
+	if err != nil {
+		t.Errorf("Unable to check if Collection is empty. Error: %s", err)
+	}
+	if empty {
+		t.Error("Collection is not empty but true returns.")
 	}
 
 	items, err := ds.ReadCollectionItems(c.IPNSAddress)
