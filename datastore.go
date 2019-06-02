@@ -72,8 +72,10 @@ func (k dbKey) IsEmpty() bool {
 // Key-Values:
 //
 // collections::[ipns] = [ipns]
+// collections_mine::[ipns] = [ipns]
 // collection::[ipns]::name
 // collection::[ipns]::description
+// collection::[ipns]::ismine
 // collection_item::[ipns]::[cid] = [cid]
 // folders::[ipns]::[folderPath] = [folderPath] # The folderPath of root folder is ""
 // folder::[ipns]::[folderPath]::children = [listOfChildFolderNames]
@@ -169,6 +171,22 @@ func (d *Datastore) CreateOrUpdateCollection(c *Collection) error {
 		if err != nil {
 			return err
 		}
+		var ismine string
+		if c.IsMine {
+			ismine = "1"
+			// collections_mine::[ipns] = [ipns]
+			err = txn.Set(dbKey{"collections_mine", c.IPNSAddress}.Bytes(), []byte(c.IPNSAddress))
+			if err != nil {
+				return err
+			}
+		} else {
+			ismine = "0"
+		}
+		// collection::[ipns]::ismine
+		err = txn.Set(append(p, "ismine").Bytes(), []byte(ismine))
+		if err != nil {
+			return err
+		}
 
 		// Create root folder
 		err = d.createOrUpdateFolderInTxn(txn, &Folder{IPNSAddress: c.IPNSAddress})
@@ -209,8 +227,23 @@ func (d *Datastore) ReadCollection(ipns string) (*Collection, error) {
 		if err != nil {
 			return err
 		}
+		item, err = txn.Get(append(p, "ismine").Bytes())
+		if err != nil {
+			return err
+		}
+		ismine := false
+		err = item.Value(func(val []byte) error {
+			s := string(val)
+			if s == "1" {
+				ismine = true
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
 
-		c = &Collection{IPNSAddress: ipns, Name: string(n), Description: string(d)}
+		c = &Collection{IPNSAddress: ipns, Name: string(n), Description: string(d), IsMine: ismine}
 
 		return nil
 	})
@@ -304,6 +337,8 @@ func (d *Datastore) DelCollection(ipns string) error {
 	})
 	return err
 }
+
+// TODO: ReadCollections list collections
 
 // CreateOrUpdateItem update collection information
 func (d *Datastore) CreateOrUpdateItem(i *Item) error {

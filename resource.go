@@ -11,6 +11,7 @@ type Collection struct {
 	IPNSAddress string // Can be either a IPNS hash or a DNSLink domain
 	Name        string
 	Description string
+	IsMine      bool
 }
 
 // Folder belongs to only one collection. It may have a parent folder and multiple sub folders.
