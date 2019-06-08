@@ -38,14 +38,22 @@ var (
 	ErrCantDelRootFolder = errors.New("Root folder can't be deleted")
 )
 
+type FilterFlag int
+
+const (
+	FilterOnly FilterFlag = 1
+	FilterAny  FilterFlag = 0
+	FilterNone FilterFlag = -1
+)
+
 const dbKeySep string = "::"
 
 type dbKey []string
 
 func newDbKeyFromStr(str string) dbKey {
-	parts := strings.Split(str, "::")
+	parts := strings.Split(str, dbKeySep)
 	for i := 0; i < len(parts); i++ {
-		parts[i] = strings.ReplaceAll(parts[i], "\\:\\:", "::")
+		parts[i] = strings.ReplaceAll(parts[i], "\\:\\:", dbKeySep)
 	}
 	return parts
 }
@@ -53,10 +61,10 @@ func newDbKeyFromStr(str string) dbKey {
 func (k dbKey) String() string {
 	var escaped []string
 	for _, keyPart := range k {
-		escaped = append(escaped, strings.ReplaceAll(keyPart, "::", "\\:\\:"))
+		escaped = append(escaped, strings.ReplaceAll(keyPart, dbKeySep, "\\:\\:"))
 	}
 
-	return strings.Join(escaped, "::")
+	return strings.Join(escaped, dbKeySep)
 }
 
 func (k dbKey) Bytes() []byte {
@@ -71,8 +79,9 @@ func (k dbKey) IsEmpty() bool {
 // For now it is a struct using BadgerDB. Later on it will be refactored as an interface with multiple database implements.
 // Key-Values:
 //
-// collections::[ipns] = [ipns]
+// collections_all::[ipns] = [ipns]
 // collections_mine::[ipns] = [ipns]
+// collections_others::[ipns] = [ipns]
 // collection::[ipns]::name
 // collection::[ipns]::description
 // collection::[ipns]::ismine
@@ -119,7 +128,7 @@ func (d *Datastore) checkIPNS(ipns string) error {
 	}
 
 	err := d.db.View(func(txn *badger.Txn) error {
-		k := dbKey{"collections", ipns}
+		k := dbKey{"collections_all", ipns}
 		_, err := txn.Get(k.Bytes())
 		return err
 	})
@@ -155,7 +164,7 @@ func (d *Datastore) CreateOrUpdateCollection(c *Collection) error {
 
 	err := d.db.Update(func(txn *badger.Txn) error {
 
-		p := dbKey{"collections", c.IPNSAddress}
+		p := dbKey{"collections_all", c.IPNSAddress}
 		err := txn.Set(p.Bytes(), []byte(c.IPNSAddress))
 		if err != nil {
 			return err
@@ -181,6 +190,11 @@ func (d *Datastore) CreateOrUpdateCollection(c *Collection) error {
 			}
 		} else {
 			ismine = "0"
+			// collections_others::[ipns] = [ipns]
+			err = txn.Set(dbKey{"collections_others", c.IPNSAddress}.Bytes(), []byte(c.IPNSAddress))
+			if err != nil {
+				return err
+			}
 		}
 		// collection::[ipns]::ismine
 		err = txn.Set(append(p, "ismine").Bytes(), []byte(ismine))
@@ -288,7 +302,19 @@ func (d *Datastore) DelCollection(ipns string) error {
 			return err
 		}
 
-		k := dbKey{"collections", ipns}
+		k := dbKey{"collections_all", ipns}
+		err = txn.Delete(k.Bytes())
+		if err != nil {
+			return err
+		}
+
+		k := dbKey{"collections_mine", ipns}
+		err = txn.Delete(k.Bytes())
+		if err != nil {
+			return err
+		}
+
+		k := dbKey{"collections_others", ipns}
 		err = txn.Delete(k.Bytes())
 		if err != nil {
 			return err
@@ -338,7 +364,69 @@ func (d *Datastore) DelCollection(ipns string) error {
 	return err
 }
 
-// TODO: ReadCollections list collections
+// ListCollections list collections
+func (d *Datastore) ListCollections(mineFlag, emptyFlag FilterFlag) ([]*Collection, error) {
+	keys := make(map[string]bool)
+
+	err := d.db.View(func(txn *badger.Txn) error {
+		var p dbKey
+		switch mineFlag {
+		case FilterNone:
+			p = dbKey{"collections_others"}
+		case FilterOnly:
+			p = dbKey{"collections_mine"}
+		default:
+			p = dbKey{"collections_all"}
+		}
+
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Seek(p.Bytes()); it.ValidForPrefix(p.Bytes()); it.Next() {
+			item := it.Item()
+			keyStr := string(item.Key())
+			key := newDbKeyFromStr(keyStr)
+
+			keys[key[1]] = true
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	var cs []*Collection
+	for k := range keys {
+		c, err := d.ReadCollection(k)
+		if err != nil {
+			return nil, err
+		}
+
+		isEmpty, err := d.IsCollectionEmpty(k)
+		if err != nil {
+			return nil, err
+		}
+
+		switch emptyFlag {
+		case FilterNone:
+			if isEmpty {
+				continue
+			}
+		case FilterOnly:
+			if !isEmpty {
+				continue
+			}
+		}
+
+		cs = append(cs, c)
+	}
+
+	return cs, nil
+}
 
 // CreateOrUpdateItem update collection information
 func (d *Datastore) CreateOrUpdateItem(i *Item) error {
@@ -1684,7 +1772,7 @@ func (d *Datastore) IsCollectionEmpty(ipns string) (bool, error) {
 	return empty, err
 }
 
-// TODO: FilterItems() SearchItems()
-// func (d *Datastore) FilterItems(tags []Tag, ipns string) ([]string, error) {
+// TODO: ListItems() SearchItems()
+// func (d *Datastore) ListItems(tags []Tag, ipns string) ([]string, error) {
 
 // }
