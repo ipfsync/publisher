@@ -308,13 +308,13 @@ func (d *Datastore) DelCollection(ipns string) error {
 			return err
 		}
 
-		k := dbKey{"collections_mine", ipns}
+		k = dbKey{"collections_mine", ipns}
 		err = txn.Delete(k.Bytes())
 		if err != nil {
 			return err
 		}
 
-		k := dbKey{"collections_others", ipns}
+		k = dbKey{"collections_others", ipns}
 		err = txn.Delete(k.Bytes())
 		if err != nil {
 			return err

@@ -81,6 +81,118 @@ func TestDatastore(t *testing.T) {
 		t.Error("Collection is mine but false returns.")
 	}
 
+	// ListCollections - All
+	cs, err := ds.ListCollections(FilterAny, FilterAny)
+	if err != nil {
+		t.Errorf("Unable to list collections. Error: %v", err)
+	}
+
+	found := false
+	for _, ci := range cs {
+		if c.IPNSAddress == ci.IPNSAddress {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("Collection is not in collection list.")
+	}
+
+	// ListCollections - Only mine
+	cs, err = ds.ListCollections(FilterOnly, FilterAny)
+	if err != nil {
+		t.Errorf("Unable to list collections. Error: %v", err)
+	}
+
+	found = false
+	for _, ci := range cs {
+		if c.IPNSAddress == ci.IPNSAddress {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("Collection is not in collection list.")
+	}
+
+	// ListCollections - Only others
+	cs, err = ds.ListCollections(FilterNone, FilterAny)
+	if err != nil {
+		t.Errorf("Unable to list collections. Error: %v", err)
+	}
+
+	found = false
+	for _, ci := range cs {
+		if c.IPNSAddress == ci.IPNSAddress {
+			found = true
+		}
+	}
+	if found {
+		t.Error("Collection is in collection list.")
+	}
+
+	// ListCollections - All empty
+	cs, err = ds.ListCollections(FilterAny, FilterOnly)
+	if err != nil {
+		t.Errorf("Unable to list collections. Error: %v", err)
+	}
+
+	found = false
+	for _, ci := range cs {
+		if c.IPNSAddress == ci.IPNSAddress {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("Collection is not in collection list.")
+	}
+
+	// ListCollections - All my empty
+	cs, err = ds.ListCollections(FilterOnly, FilterOnly)
+	if err != nil {
+		t.Errorf("Unable to list collections. Error: %v", err)
+	}
+
+	found = false
+	for _, ci := range cs {
+		if c.IPNSAddress == ci.IPNSAddress {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("Collection is not in collection list.")
+	}
+
+	// ListCollections - All non-empty
+	cs, err = ds.ListCollections(FilterAny, FilterNone)
+	if err != nil {
+		t.Errorf("Unable to list collections. Error: %v", err)
+	}
+
+	found = false
+	for _, ci := range cs {
+		if c.IPNSAddress == ci.IPNSAddress {
+			found = true
+		}
+	}
+	if found {
+		t.Error("Collection is in collection list.")
+	}
+
+	// ListCollections - All my non-empty
+	cs, err = ds.ListCollections(FilterOnly, FilterNone)
+	if err != nil {
+		t.Errorf("Unable to list collections. Error: %v", err)
+	}
+
+	found = false
+	for _, ci := range cs {
+		if c.IPNSAddress == ci.IPNSAddress {
+			found = true
+		}
+	}
+	if found {
+		t.Error("Collection is in collection list.")
+	}
+
 	// Update collection
 	c.Name = "Test Collection2"
 	c.IsMine = false
