@@ -107,9 +107,7 @@ func NewDatastore(dbPath string) (*Datastore, error) {
 		panic("Invalid dbPath")
 	}
 
-	opts := badger.DefaultOptions
-	opts.Dir = dbPath
-	opts.ValueDir = dbPath
+	opts := badger.DefaultOptions(dbPath)
 	db, err := badger.Open(opts)
 	if err != nil {
 		return nil, err
